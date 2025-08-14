@@ -1,0 +1,6 @@
+@ClearSkies.Api_HostAddress = http://localhost:5098
+
+GET {{ClearSkies.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
