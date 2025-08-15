@@ -1,5 +1,6 @@
 ﻿using ClearSkies.Domain;
 using ClearSkies.Infrastructure;
+using Microsoft.Extensions.Logging;
 
 namespace ClearSkies.Api.Services;
 
@@ -11,43 +12,56 @@ public interface IConditionsService
 public sealed class ConditionsService : IConditionsService
 {
     private readonly IMetarSource _metarSource;
+    private readonly IAirportCatalog _catalog;
     private readonly ILogger<ConditionsService> _logger;
 
-    public ConditionsService(IMetarSource metarSource, ILogger<ConditionsService> logger)
+    public ConditionsService(
+        IMetarSource metarSource,
+        IAirportCatalog catalog,
+        ILogger<ConditionsService> logger)
     {
         _metarSource = metarSource;
+        _catalog = catalog;
         _logger = logger;
     }
 
     public async Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct)
     {
-        _logger.LogInformation($"Fetching METAR for ICAO: {icao}");
+        _logger.LogInformation("Fetching METAR for {ICAO}", icao);
+
         var metar = await _metarSource.GetLatestAsync(icao, ct);
         if (metar is null)
         {
-            // TEMP STUB (remove once AVWX is working)
+            _logger.LogWarning("No METAR returned for {ICAO}", icao);
+
+            // If you still want a dev-only fallback, flip this to true
+            const bool USE_DEV_STUB = false;
+            if (!USE_DEV_STUB) return null;
+
             var now = DateTime.UtcNow;
             var stub = new Metar(icao.ToUpperInvariant(), now, 190m, 12m, 18m, 10m, 4500, 20m, 12m, 30.02m);
-            var cat = AviationCalculations.ComputeCategory(stub.CeilingFtAgl, stub.VisibilitySm);
-            var (head, cross) = AviationCalculations.WindComponents(runwayHeadingDeg, stub.WindDirDeg, stub.WindKt);
-            var da = AviationCalculations.DensityAltitudeFt(fieldElevationFt: 13 /*KSFO approx*/, stub.TemperatureC, stub.AltimeterInHg);
+            var stubCat = AviationCalculations.ComputeCategory(stub.CeilingFtAgl, stub.VisibilitySm);
+            var (stubHead, stubCross) = AviationCalculations.WindComponents(runwayHeadingDeg, stub.WindDirDeg, stub.WindKt);
+            var stubElev = _catalog.GetElevationFt(stub.Icao) ?? 0;
+            var stubDa = AviationCalculations.DensityAltitudeFt(stubElev, stub.TemperatureC, stub.AltimeterInHg);
 
             return new AirportConditionsDto(
-                stub.Icao, cat, stub.Observed, stub.WindDirDeg, stub.WindKt, stub.GustKt,
+                stub.Icao, stubCat, stub.Observed, stub.WindDirDeg, stub.WindKt, stub.GustKt,
                 stub.VisibilitySm, stub.CeilingFtAgl, stub.TemperatureC, stub.DewpointC,
-                stub.AltimeterInHg, head, cross, da
+                stub.AltimeterInHg, stubHead, stubCross, stubDa
             );
         }
 
-        // Compute derived values
         var category = AviationCalculations.ComputeCategory(metar.CeilingFtAgl, metar.VisibilitySm);
-        var (head2, cross2) = AviationCalculations.WindComponents(runwayHeadingDeg, metar.WindDirDeg, metar.WindKt);
+        var (head, cross) = AviationCalculations.WindComponents(runwayHeadingDeg, metar.WindDirDeg, metar.WindKt);
 
-        // TODO: replace with a real airport catalog lookup
-        var fieldElevationFt2 = 433; // KSEA approx
-        var da2 = AviationCalculations.DensityAltitudeFt(fieldElevationFt2, metar.TemperatureC, metar.AltimeterInHg);
+        // ✅ Use real field elevation from the catalog
+        var fieldElevationFt = _catalog.GetElevationFt(metar.Icao) ?? 0;
+        var da = AviationCalculations.DensityAltitudeFt(fieldElevationFt, metar.TemperatureC, metar.AltimeterInHg);
 
-        _logger.LogInformation($"Returning AirportConditionsDto for ICAO: {icao}");
+        _logger.LogInformation("Returning conditions for {ICAO} (DA {DA} ft, Head {Head} kt, Cross {Cross} kt)",
+            icao, da, head, cross);
+
         return new AirportConditionsDto(
             Icao: metar.Icao,
             Category: category,
@@ -60,9 +74,9 @@ public sealed class ConditionsService : IConditionsService
             TemperatureC: metar.TemperatureC,
             DewpointC: metar.DewpointC,
             AltimeterInHg: metar.AltimeterInHg,
-            HeadwindKt: head2,
-            CrosswindKt: cross2,
-            DensityAltitudeFt: da2
+            HeadwindKt: head,
+            CrosswindKt: cross,
+            DensityAltitudeFt: da
         );
     }
 }
