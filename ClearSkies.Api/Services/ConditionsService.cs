@@ -35,9 +35,13 @@ public sealed class ConditionsService : IConditionsService
             _logger.LogWarning("No METAR returned for {ICAO}", icao);
 
             // If you still want a dev-only fallback, flip this to true
-            const bool USE_DEV_STUB = false;
+#if DEBUG
+            const bool USE_DEV_STUB = true;
             if (!USE_DEV_STUB) return null;
-
+#else
+            // In release, don't use stub, just return null
+            return null;
+#endif
             var now = DateTime.UtcNow;
             var stub = new Metar(icao.ToUpperInvariant(), now, 190m, 12m, 18m, 10m, 4500, 20m, 12m, 30.02m);
             var stubCat = AviationCalculations.ComputeCategory(stub.CeilingFtAgl, stub.VisibilitySm);
@@ -45,10 +49,25 @@ public sealed class ConditionsService : IConditionsService
             var stubElev = _catalog.GetElevationFt(stub.Icao) ?? 0;
             var stubDa = AviationCalculations.DensityAltitudeFt(stubElev, stub.TemperatureC, stub.AltimeterInHg);
 
+            // Stub branch
+            var stubAgeMinutes = 0;
             return new AirportConditionsDto(
-                stub.Icao, stubCat, stub.Observed, stub.WindDirDeg, stub.WindKt, stub.GustKt,
-                stub.VisibilitySm, stub.CeilingFtAgl, stub.TemperatureC, stub.DewpointC,
-                stub.AltimeterInHg, stubHead, stubCross, stubDa
+                stub.Icao,
+                (int)stubCat, // Cast FlightCategory to int
+                stub.Observed,
+                stub.WindDirDeg,
+                stub.WindKt,
+                stub.GustKt,
+                stub.VisibilitySm,
+                stub.CeilingFtAgl,
+                stub.TemperatureC,
+                stub.DewpointC,
+                stub.AltimeterInHg,
+                stubHead,
+                stubCross,
+                stubDa,
+                false, // IsStale
+                stubAgeMinutes
             );
         }
 
@@ -59,12 +78,17 @@ public sealed class ConditionsService : IConditionsService
         var fieldElevationFt = _catalog.GetElevationFt(metar.Icao) ?? 0;
         var da = AviationCalculations.DensityAltitudeFt(fieldElevationFt, metar.TemperatureC, metar.AltimeterInHg);
 
+        // Compute staleness (older than 1 hour)
+        var ageMinutes = (int)(DateTime.UtcNow - metar.Observed).TotalMinutes;
+        var isStale = ageMinutes > 60;
+
         _logger.LogInformation("Returning conditions for {ICAO} (DA {DA} ft, Head {Head} kt, Cross {Cross} kt)",
             icao, da, head, cross);
 
+        // Real METAR branch
         return new AirportConditionsDto(
             Icao: metar.Icao,
-            Category: category,
+            Category: (int)category, // Cast FlightCategory to int
             ObservedUtc: metar.Observed,
             WindDirDeg: metar.WindDirDeg,
             WindKt: metar.WindKt,
@@ -76,7 +100,9 @@ public sealed class ConditionsService : IConditionsService
             AltimeterInHg: metar.AltimeterInHg,
             HeadwindKt: head,
             CrosswindKt: cross,
-            DensityAltitudeFt: da
+            DensityAltitudeFt: da,
+            IsStale: isStale,
+            AgeMinutes: ageMinutes
         );
     }
 }

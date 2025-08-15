@@ -2,9 +2,9 @@ using System;
 
 namespace ClearSkies.Domain;
 
-public sealed record AirportConditionsDto(
+public record AirportConditionsDto(
     string Icao,
-    FlightCategory Category,
+    int Category,
     DateTime ObservedUtc,
     decimal WindDirDeg,
     decimal WindKt,
@@ -16,4 +16,9 @@ public sealed record AirportConditionsDto(
     decimal AltimeterInHg,
     decimal HeadwindKt,
     decimal CrosswindKt,
-    int DensityAltitudeFt);
+    int DensityAltitudeFt,
+    bool IsStale, // true if the conditions are older than 1 hour
+    int AgeMinutes // minutes since observation
+);
+
+
