@@ -1,88 +1,74 @@
-﻿using System.Net.Http.Json;
+﻿using System;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading.Tasks;
 using ClearSkies.App.Models;
 
-namespace ClearSkies.App
+namespace ClearSkies.App;
+
+public partial class MainPage : ContentPage
 {
-    public partial class MainPage : ContentPage
+    private readonly HttpClient _http;
+
+    // Use named client 'ClearSkiesApi' from MauiProgram
+    public MainPage(IHttpClientFactory httpFactory)
     {
-        int count = 0;
+        InitializeComponent();
+        _http = httpFactory.CreateClient("ClearSkiesApi");
+    }
 
-        private const string ApiBase = "https://localhost:44344";
-        private static readonly HttpClient _http = new();
+    private async void OnFetchClicked(object sender, EventArgs e)
+    {
+        var icao = IcaoEntry?.Text?.Trim().ToUpperInvariant();
+        var runway = RunwayEntry?.Text?.Trim().ToUpperInvariant();
 
-        public MainPage()
+        if (string.IsNullOrWhiteSpace(icao))
         {
-            InitializeComponent();
+            await DisplayAlert("Input required", "Enter an ICAO (e.g., KSFO).", "OK");
+            return;
         }
 
-        private void OnCounterClicked(object sender, EventArgs e)
+        try
         {
-            count++;
+            // runway is a string designator like "28L" (NOT an int), matching your API
+            var url = string.IsNullOrWhiteSpace(runway)
+                ? $"airports/{icao}/conditions"
+                : $"airports/{icao}/conditions?runway={Uri.EscapeDataString(runway)}";
 
-            if (count == 1)
-                CounterBtn.Text = $"Clicked {count} time";
-            else
-                CounterBtn.Text = $"Clicked {count} times";
+            var dto = await _http.GetFromJsonAsync<AirportConditionsDto>(url);
 
-            SemanticScreenReader.Announce(CounterBtn.Text);
-        }
-
-        private async void Fetch_Clicked(object sender, EventArgs e)
-        {
-            // Fix: Use 'this.IcaoEntry', 'this.RunwayPicker', etc. since they are defined in XAML with x:Name
-            var icao = (this.IcaoEntry.Text ?? "").Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(icao))
+            if (dto is null)
             {
-                await DisplayAlert("Missing ICAO", "Enter an ICAO like KSFO or KDEN.", "OK");
+                ResultLabel.Text = "No data returned from API.";
+                StaleBadge.IsVisible = false;
                 return;
             }
 
-            string? runway = null;
-            if (this.RunwayPicker.SelectedItem is not null)
-            {
-                var item = this.RunwayPicker.SelectedItem;
-                var valueProp = item.GetType().GetProperty("Value");
-                if (valueProp is not null)
-                    runway = valueProp.GetValue(item)?.ToString();
-                runway ??= item.ToString();
-            }
-            if (string.IsNullOrWhiteSpace(runway))
-            {
-                await DisplayAlert("Pick a runway", "Please select a runway first.", "OK");
-                return;
-            }
+            // Simple render
+            ResultLabel.Text =
+                $"ICAO: {dto.Icao}\n" +
+                $"Category: {dto.Category}\n" +
+                $"Observed (UTC): {dto.ObservedUtc:yyyy-MM-dd HH:mm}\n" +
+                $"Wind: {dto.WindDirDeg}° @ {dto.WindKt} kt (G{dto.GustKt?.ToString() ?? "-"})\n" +
+                $"Vis: {dto.VisibilitySm} sm  Ceiling: {(dto.CeilingFtAgl?.ToString() ?? "-") } ft AGL\n" +
+                $"Temp/Dew: {dto.TemperatureC}°C / {dto.DewpointC}°C  Alt: {dto.AltimeterInHg} inHg\n" +
+                $"Headwind: {dto.HeadwindKt} kt  Crosswind: {dto.CrosswindKt} kt\n" +
+                $"Density Altitude: {dto.DensityAltitudeFt} ft\n" +
+                $"Age: {dto.AgeMinutes} min";
 
-            try
-            {
-                var url = $"{ApiBase}/airports/{icao}/conditions?runway={Uri.EscapeDataString(runway)}";
-                var dto = await _http.GetFromJsonAsync<AirportConditionsDto>(url);
-
-                if (dto is null)
-                {
-                    this.ResultLabel.Text = "No data returned.";
-                    this.StaleBadge.IsVisible = false;
-                    return;
-                }
-
-                this.StaleBadge.IsVisible = dto.IsStale;
-                this.StaleBadge.Text = dto.IsStale ? $"STALE ({dto.AgeMinutes} min)" : "STALE";
-
-                this.ResultLabel.Text =
-                    $"ICAO: {dto.Icao}\n" +
-                    $"Cat: {dto.Category}  |  Obs: {dto.ObservedUtc:yyyy-MM-dd HH:mm}Z  ({dto.AgeMinutes} min old)\n" +
-                    $"Wind: {dto.WindDirDeg:0}° @ {dto.WindKt:0} kt  (G{dto.GustKt?.ToString("0") ?? "—"})\n" +
-                    $"Vis: {dto.VisibilitySm:0} sm  |  Ceiling: {(dto.CeilingFtAgl?.ToString() ?? "—")} ft\n" +
-                    $"Headwind: {dto.HeadwindKt:0.#} kt  |  Crosswind: {dto.CrosswindKt:0.#} kt\n" +
-                    $"DA: {dto.DensityAltitudeFt:N0} ft  |  Stale: {dto.IsStale}";
-            }
-            catch (HttpRequestException)
-            {
-                await DisplayAlert("Network error", "Could not fetch conditions. Check API is running and URL/port.", "OK");
-            }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Error", ex.Message, "OK");
-            }
+            StaleBadge.Text = dto.IsStale ? "STALE" : "FRESH";
+            StaleBadge.BackgroundColor = dto.IsStale ? Colors.OrangeRed : Colors.SeaGreen;
+            StaleBadge.IsVisible = true;
+        }
+        catch (HttpRequestException ex)
+        {
+            ResultLabel.Text = $"HTTP error: {ex.Message}";
+            StaleBadge.IsVisible = false;
+        }
+        catch (Exception ex)
+        {
+            ResultLabel.Text = $"Error: {ex.Message}";
+            StaleBadge.IsVisible = false;
         }
     }
 }

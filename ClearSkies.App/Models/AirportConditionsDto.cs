@@ -25,6 +25,4 @@ namespace ClearSkies.App.Models
     }
 }
 
-// ... inside your page code-behind method:
-var url = "https://api.example.com/airports/your-icao-code/conditions"; // Replace with actual URL
-var dto = await _http.GetFromJsonAsync<AirportConditionsDto>(url);
+

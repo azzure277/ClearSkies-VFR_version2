@@ -1,24 +1,26 @@
 using System;
 
-namespace ClearSkies.Domain;
-
-public record AirportConditionsDto(
-    string Icao,
-    int Category,
-    DateTime ObservedUtc,
-    decimal WindDirDeg,
-    decimal WindKt,
-    decimal? GustKt,
-    decimal VisibilitySm,
-    int? CeilingFtAgl,
-    decimal TemperatureC,
-    decimal DewpointC,
-    decimal AltimeterInHg,
-    decimal HeadwindKt,
-    decimal CrosswindKt,
-    int DensityAltitudeFt,
-    bool IsStale, // true if the conditions are older than 1 hour
-    int AgeMinutes // minutes since observation
-);
+namespace ClearSkies.Domain
+{
+    public sealed class AirportConditionsDto
+    {
+        public string Icao { get; set; } = "";
+        public int Category { get; set; }
+        public DateTime ObservedUtc { get; set; }
+        public decimal WindDirDeg { get; set; }
+        public decimal WindKt { get; set; }
+        public decimal? GustKt { get; set; }
+        public decimal VisibilitySm { get; set; }
+        public int? CeilingFtAgl { get; set; }
+        public decimal TemperatureC { get; set; }
+        public decimal DewpointC { get; set; }
+        public decimal AltimeterInHg { get; set; }
+        public decimal HeadwindKt { get; set; }
+        public decimal CrosswindKt { get; set; }
+        public int DensityAltitudeFt { get; set; }
+        public bool IsStale { get; set; }
+        public int AgeMinutes { get; set; }
+    }
+}
 
 
