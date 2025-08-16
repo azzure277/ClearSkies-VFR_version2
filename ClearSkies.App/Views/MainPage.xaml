@@ -1,0 +1,8 @@
+<!-- STALE badge (hidden unless IsStale=true) -->
+<Label x:Name="StaleBadge"
+       Text="STALE"
+       TextColor="White"
+       BackgroundColor="Red"
+       Padding="6,2"
+       HorizontalOptions="Start"
+       IsVisible="False" />

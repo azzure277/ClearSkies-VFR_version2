@@ -34,14 +34,11 @@ public sealed class ConditionsService : IConditionsService
         {
             _logger.LogWarning("No METAR returned for {ICAO}", icao);
 
-            // If you still want a dev-only fallback, flip this to true
 #if DEBUG
             const bool USE_DEV_STUB = true;
-            if (!USE_DEV_STUB) return null;
-#else
-            // In release, don't use stub, just return null
-            return null;
-#endif
+            if (!USE_DEV_STUB)
+                return null;
+
             var now = DateTime.UtcNow;
             var stub = new Metar(icao.ToUpperInvariant(), now, 190m, 12m, 18m, 10m, 4500, 20m, 12m, 30.02m);
             var stubCat = AviationCalculations.ComputeCategory(stub.CeilingFtAgl, stub.VisibilitySm);
@@ -69,6 +66,10 @@ public sealed class ConditionsService : IConditionsService
                 false, // IsStale
                 stubAgeMinutes
             );
+#else
+            // In release, don't use stub, just return null
+            return null;
+#endif
         }
 
         var category = AviationCalculations.ComputeCategory(metar.CeilingFtAgl, metar.VisibilitySm);
