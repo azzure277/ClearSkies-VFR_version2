@@ -1,4 +1,6 @@
 using ClearSkies.Api.Options;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using ClearSkies.Api.Services;
 using ClearSkies.Infrastructure;
@@ -10,9 +12,8 @@ using ClearSkies.Infrastructure.Weather;
 
 var builder = WebApplication.CreateBuilder(args);
 // Register the stub provider
-builder.Services.AddSingleton<IWeatherProvider, InMemoryWeatherProvider>();
-// Decorate with caching
-builder.Services.Decorate<IWeatherProvider, CachingWeatherProvider>();
+builder.Services.AddScoped<IWeatherProvider, InMemoryWeatherProvider>();
+builder.Services.Decorate<IWeatherProvider, ClearSkies.Infrastructure.Weather.CachingWeatherProvider>();
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -32,8 +33,21 @@ builder.Services.AddScoped<IConditionsService, ConditionsService>();
 // Add controllers
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache(); // used in the next step (caching)
+builder.Services.AddScoped<ClearSkies.Domain.Diagnostics.ICacheStamp, ClearSkies.Domain.Diagnostics.CacheStamp>();
 
 var app = builder.Build();
+// Add middleware to set X-Cache header for diagnostics
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.OnStarting(() =>
+    {
+        var stamp = ctx.RequestServices.GetService<ClearSkies.Domain.Diagnostics.ICacheStamp>();
+        if (!string.IsNullOrEmpty(stamp?.Result))
+            ctx.Response.Headers["X-Cache"] = stamp.Result!;
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 if (app.Environment.IsDevelopment())
 {

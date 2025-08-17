@@ -45,6 +45,8 @@ namespace ClearSkies.Api.Controllers
             if (dto is null)
                 return NotFound();
 
+            if (!string.IsNullOrEmpty(dto.CacheResult))
+                Response.Headers["X-Cache"] = dto.CacheResult;
             return Ok(dto);
         }
     }

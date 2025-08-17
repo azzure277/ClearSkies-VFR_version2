@@ -13,71 +13,38 @@ public interface IConditionsService
 
 public sealed class ConditionsService : IConditionsService
 {
-    private readonly IMetarSource _metarSource;
+    private readonly IWeatherProvider _weatherProvider;
     private readonly IAirportCatalog _catalog;
     private readonly ClearSkies.Domain.Aviation.IRunwayCatalog _runways;
     private readonly ILogger<ConditionsService> _logger;
     private readonly WeatherOptions _options;
+    private readonly ClearSkies.Domain.Diagnostics.ICacheStamp _stamp;
 
     public ConditionsService(
-        IMetarSource metarSource,
+        IWeatherProvider weatherProvider,
         IAirportCatalog catalog,
         ClearSkies.Domain.Aviation.IRunwayCatalog runways,
         IOptions<WeatherOptions> options,
-        ILogger<ConditionsService> logger)
+        ILogger<ConditionsService> logger,
+        ClearSkies.Domain.Diagnostics.ICacheStamp stamp)
     {
-        _metarSource = metarSource;
+        _weatherProvider = weatherProvider;
         _catalog = catalog;
         _runways = runways;
         _logger = logger;
-        _options = options.Value;   // <-- get the bound options
+        _options = options.Value;
+        _stamp = stamp;
     }
 
     public async Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct)
     {
         _logger.LogInformation("Fetching METAR for {ICAO}", icao);
 
-        var metar = await _metarSource.GetLatestAsync(icao, ct);
+    var metar = await _weatherProvider.GetMetarAsync(icao, ct);
         if (metar is null)
         {
             _logger.LogWarning("No METAR returned for {ICAO}", icao);
-
-#if DEBUG
-            const bool USE_DEV_STUB = true;
-            if (!USE_DEV_STUB)
-                return null;
-
-            var now = DateTime.UtcNow;
-            var stub = new Metar(icao.ToUpperInvariant(), now, 190m, 12m, 18m, 10m, 4500, 20m, 12m, 30.02m);
-            var stubCat = AviationCalculations.ComputeCategory(stub.CeilingFtAgl, stub.VisibilitySm);
-            var (stubHead, stubCross) = AviationCalculations.WindComponents(runwayHeadingDeg, stub.WindDirDeg, stub.WindKt);
-            var stubElev = _catalog.GetElevationFt(stub.Icao) ?? 0;
-            var stubDa = AviationCalculations.DensityAltitudeFt(stubElev, stub.TemperatureC, stub.AltimeterInHg);
-
-            // Stub branch
-            var stubAgeMinutes = 0;
-            return new AirportConditionsDto {
-                Icao = stub.Icao,
-                Category = (int)stubCat,
-                ObservedUtc = stub.Observed,
-                WindDirDeg = stub.WindDirDeg,
-                WindKt = stub.WindKt,
-                GustKt = stub.GustKt,
-                VisibilitySm = stub.VisibilitySm,
-                CeilingFtAgl = stub.CeilingFtAgl,
-                TemperatureC = stub.TemperatureC,
-                DewpointC = stub.DewpointC,
-                AltimeterInHg = stub.AltimeterInHg,
-                HeadwindKt = stubHead,
-                CrosswindKt = stubCross,
-                DensityAltitudeFt = stubDa,
-                IsStale = false,
-                AgeMinutes = stubAgeMinutes
-            };
-#else
-            // In release, don't use stub, just return null
             return null;
-#endif
         }
 
         var category = AviationCalculations.ComputeCategory(metar.CeilingFtAgl, metar.VisibilitySm);
@@ -95,7 +62,8 @@ public sealed class ConditionsService : IConditionsService
             icao, da, head, cross);
 
         // Real METAR branch
-        return new AirportConditionsDto {
+        _logger.LogInformation($"Returning real DTO, _stamp.Result={_stamp.Result}");
+        var dto = new AirportConditionsDto {
             Icao = metar.Icao,
             Category = (int)category,
             ObservedUtc = metar.Observed,
@@ -111,7 +79,10 @@ public sealed class ConditionsService : IConditionsService
             CrosswindKt = cross,
             DensityAltitudeFt = da,
             IsStale = isStale,
-            AgeMinutes = ageMinutes
+            AgeMinutes = ageMinutes,
+            CacheResult = _stamp.Result
         };
+    dto.CacheResult = _stamp.Result;
+        return dto;
     }
 }
