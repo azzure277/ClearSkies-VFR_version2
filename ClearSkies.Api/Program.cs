@@ -5,8 +5,14 @@ using ClearSkies.Infrastructure;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
 using ClearSkies.Infrastructure.Runways;
+using ClearSkies.Domain.Options; // Added for WeatherOptions
+using ClearSkies.Infrastructure.Weather;
 
 var builder = WebApplication.CreateBuilder(args);
+// Register the stub provider
+builder.Services.AddSingleton<IWeatherProvider, InMemoryWeatherProvider>();
+// Decorate with caching
+builder.Services.Decorate<IWeatherProvider, CachingWeatherProvider>();
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -17,19 +23,15 @@ builder.Services.AddSingleton<ClearSkies.Domain.Aviation.IRunwayCatalog, ClearSk
 builder.Services.AddSingleton<IAirportCatalog, InMemoryAirportCatalog>();
 builder.Services.AddHttpClient<IMetarSource, AvwxMetarSource>();
 
-// Options binding
-builder.Services
-    .AddOptions<WeatherOptions>()
-    .Bind(builder.Configuration.GetSection("Weather"))
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+// Options binding (updated to use Configure)
+builder.Services.Configure<WeatherOptions>(builder.Configuration.GetSection("Weather"));
 
 // Let DI construct ConditionsService (no lambda!)
 builder.Services.AddScoped<IConditionsService, ConditionsService>();
 
 // Add controllers
 builder.Services.AddControllers();
-builder.Services.AddMemoryCache();
+builder.Services.AddMemoryCache(); // used in the next step (caching)
 
 var app = builder.Build();
 
