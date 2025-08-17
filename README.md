@@ -4,3 +4,9 @@ Version 2 added runway catalog support (tested with KSFO 28L
 ![walogcache](https://github.com/user-attachments/assets/9489170d-87ff-4b01-b88a-b3b68e502139)
 
 ![rtcondtions](https://github.com/user-attachments/assets/c7630171-7a9a-4414-b47a-4dbb97923409)
+  Version 2 (current)
+- Runway catalog integrated (ICAO + designator → magnetic heading)
+- Endpoint: `/airports/{icao}/conditions?runway=XX`
+- Freshness: `isStale`, `ageMinutes`
+- Caching layer ready (configurable via `Weather:CacheMinutes`)
+
