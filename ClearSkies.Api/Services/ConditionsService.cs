@@ -1,8 +1,10 @@
-﻿using ClearSkies.Api.Options;
+﻿
 using Microsoft.Extensions.Options;
+using ClearSkies.Domain.Options;
 using ClearSkies.Domain;
 using ClearSkies.Infrastructure;
 using Microsoft.Extensions.Logging;
+
 
 namespace ClearSkies.Api.Services;
 
@@ -54,9 +56,10 @@ public sealed class ConditionsService : IConditionsService
         var fieldElevationFt = _catalog.GetElevationFt(metar.Icao) ?? 0;
         var da = AviationCalculations.DensityAltitudeFt(fieldElevationFt, metar.TemperatureC, metar.AltimeterInHg);
 
-        // Compute staleness (older than configured minutes)
-        var ageMinutes = (int)Math.Round((DateTime.UtcNow - metar.Observed).TotalMinutes);
-        var isStale = ageMinutes > _options.FreshMinutes;
+    // Compute staleness using WeatherOptions thresholds
+    var nowUtc = DateTime.UtcNow;
+    var ageMinutes = (int)Math.Max(0, Math.Round((nowUtc - metar.Observed).TotalMinutes));
+    var isStale = ageMinutes >= _options.StaleAfterMinutes;
 
         _logger.LogInformation("Returning conditions for {ICAO} (DA {DA} ft, Head {Head} kt, Cross {Cross} kt)",
             icao, da, head, cross);
@@ -64,7 +67,7 @@ public sealed class ConditionsService : IConditionsService
         // Real METAR branch
         _logger.LogInformation($"Returning real DTO, _stamp.Result={_stamp.Result}");
         var dto = new AirportConditionsDto {
-            Icao = metar.Icao,
+            Icao = icao.ToUpperInvariant(),
             Category = (int)category,
             ObservedUtc = metar.Observed,
             WindDirDeg = metar.WindDirDeg,
@@ -82,7 +85,6 @@ public sealed class ConditionsService : IConditionsService
             AgeMinutes = ageMinutes,
             CacheResult = _stamp.Result
         };
-    dto.CacheResult = _stamp.Result;
         return dto;
     }
 }

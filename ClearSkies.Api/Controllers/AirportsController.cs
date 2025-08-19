@@ -1,8 +1,9 @@
+
 using Microsoft.AspNetCore.Mvc;
-using ClearSkies.Api.Options;
+using ClearSkies.Domain.Options;
 using ClearSkies.Api.Services;
 using ClearSkies.Domain;
-using ClearSkies.Domain.Aviation; // If AirportConditionsDto is in ClearSkies.Domain
+using ClearSkies.Domain.Aviation;
 
 namespace ClearSkies.Api.Controllers
 {
@@ -12,11 +13,13 @@ namespace ClearSkies.Api.Controllers
     {
         private readonly IConditionsService _svc;
         private readonly IRunwayCatalog _runways;
+        private readonly WeatherOptions _opt;
 
-        public AirportsController(IConditionsService svc, IRunwayCatalog runways)
+    public AirportsController(IConditionsService svc, IRunwayCatalog runways, Microsoft.Extensions.Options.IOptions<WeatherOptions> opt)
         {
             _svc = svc;
             _runways = runways;
+            _opt = opt.Value;
         }
 
         [HttpGet("{icao}/conditions")]
@@ -43,10 +46,20 @@ namespace ClearSkies.Api.Controllers
             var dto = await _svc.GetConditionsAsync(icao, runwayMagHeading ?? 0, ct);
 
             if (dto is null)
-                return NotFound();
+                return Problem(
+                    title: "No METAR available",
+                    detail: "Upstream provider returned no observation for this station.",
+                    statusCode: StatusCodes.Status502BadGateway);
 
             if (!string.IsNullOrEmpty(dto.CacheResult))
                 Response.Headers["X-Cache"] = dto.CacheResult;
+
+            // Add stale/critically stale headers for UI/clients
+            if (dto.IsStale)
+                Response.Headers["X-Data-Stale"] = $"true; age={dto.AgeMinutes}m; threshold={_opt.StaleAfterMinutes}m";
+
+            if (_opt.CriticallyStaleAfterMinutes is int crit && dto.AgeMinutes >= crit)
+                Response.Headers.Append("Warning", $"110 - \"METAR critically stale ({dto.AgeMinutes} min)\"");
             return Ok(dto);
         }
     }

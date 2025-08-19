@@ -1,4 +1,3 @@
-using ClearSkies.Api.Options;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
@@ -56,7 +55,19 @@ if (app.Environment.IsDevelopment())
 }
 
 // Health check endpoint
-app.MapGet("/health", () => Results.Ok("OK"));
+app.MapGet("/health", (Microsoft.Extensions.Options.IOptions<ClearSkies.Domain.Options.WeatherOptions> opt) =>
+{
+    var o = opt.Value;
+    return Results.Ok(new {
+        status = "ok",
+        weather = new {
+            cacheMinutes = o.CacheMinutes,
+            staleAfterMinutes = o.StaleAfterMinutes,
+            criticallyStaleAfterMinutes = o.CriticallyStaleAfterMinutes
+        },
+        serverUtc = DateTime.UtcNow
+    });
+});
 
 // Echo endpoint for ICAO
 app.MapGet("/echo/{icao}", (string icao) => Results.Ok(new { icao }));
