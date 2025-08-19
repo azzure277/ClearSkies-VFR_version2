@@ -4,6 +4,7 @@ using ClearSkies.Domain.Options;
 using ClearSkies.Api.Services;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
+using ClearSkies.Api.Problems;
 
 namespace ClearSkies.Api.Controllers
 {
@@ -25,7 +26,7 @@ namespace ClearSkies.Api.Controllers
         [HttpGet("{icao}/conditions")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(AirportConditionsDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
         public async Task<IActionResult> GetConditions(
             string icao,
             [FromQuery] string? runway = null,
@@ -48,8 +49,9 @@ namespace ClearSkies.Api.Controllers
             if (dto is null)
                 return Problem(
                     title: "No METAR available",
-                    detail: "Upstream provider returned no observation for this station.",
-                    statusCode: StatusCodes.Status502BadGateway);
+                    detail: $"Upstream provider returned no observation for station '{icao}'.",
+                    statusCode: StatusCodes.Status502BadGateway,
+                    type: "https://clear-skies.dev/problems/no-metar");
 
             if (!string.IsNullOrEmpty(dto.CacheResult))
                 Response.Headers["X-Cache"] = dto.CacheResult;

@@ -26,18 +26,38 @@ public sealed class CachingWeatherProvider : IWeatherProvider
 
     public async Task<Metar?> GetMetarAsync(string icao, CancellationToken ct = default)
     {
-        var key = $"metar:{icao}";
-        if (_cache.TryGetValue(key, out Metar? hit))
+        var key = $"metar:{icao.ToUpperInvariant()}";
+
+        // Try cache first
+        if (_cache.TryGetValue(key, out Metar? hit) && hit is not null)
         {
             _stamp.Result = "HIT";
-            _logger.LogInformation($"Cache HIT for {icao}, stamp.Result={_stamp.Result}");
+            _logger.LogInformation("CACHE HIT {Key}", key);
             return hit;
         }
 
-        var metar = await _inner.GetMetarAsync(icao, ct);
-        _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
-        _stamp.Result = "MISS";
-        _logger.LogInformation($"Cache MISS for {icao}, stamp.Result={_stamp.Result}");
-        return metar;
+        try
+        {
+            // Fetch from inner
+            var metar = await _inner.GetMetarAsync(icao, ct);
+
+            if (metar is null)
+            {
+                _stamp.Result = "MISS";
+                _logger.LogWarning("Inner provider returned null for {Icao}", icao);
+                return null; // let controller create ProblemDetails
+            }
+
+            _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
+            _stamp.Result = "MISS";
+            _logger.LogInformation("CACHE MISS -> stored {Key}", key);
+            return metar;
+        }
+        catch (Exception ex)
+        {
+            _stamp.Result = "MISS";
+            _logger.LogError(ex, "Upstream provider failed for {Icao}", icao);
+            return null; // fail-soft: service/controller will surface 502
+        }
     }
 }
