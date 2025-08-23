@@ -10,3 +10,5 @@ Version 2 added runway catalog support (tested with KSFO 28L
 - Freshness: `isStale`, `ageMinutes`
 - Caching layer (configurable via `Weather:CacheMinutes`)
 
+
+![etag'](https://github.com/user-attachments/assets/ea522287-c484-49e8-8f1b-b33c79a4a3ee)
