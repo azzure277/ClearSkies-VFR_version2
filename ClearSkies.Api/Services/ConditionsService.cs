@@ -57,9 +57,16 @@ public sealed class ConditionsService : IConditionsService
         var da = AviationCalculations.DensityAltitudeFt(fieldElevationFt, metar.TemperatureC, metar.AltimeterInHg);
 
     // Compute staleness using WeatherOptions thresholds
+
     var nowUtc = DateTime.UtcNow;
     var ageMinutes = (int)Math.Max(0, Math.Round((nowUtc - metar.Observed).TotalMinutes));
     var isStale = ageMinutes >= _options.StaleAfterMinutes;
+
+    // If we served cached data due to upstream failure, force stale=true
+    if (string.Equals(_stamp.Result, "FALLBACK", StringComparison.OrdinalIgnoreCase))
+    {
+        isStale = true;
+    }
 
         _logger.LogInformation("Returning conditions for {ICAO} (DA {DA} ft, Head {Head} kt, Cross {Cross} kt)",
             icao, da, head, cross);

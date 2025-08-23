@@ -34,23 +34,59 @@ namespace ClearSkies.Infrastructure.Weather
         }
 
     public async Task<Metar?> GetMetarAsync(string icao, CancellationToken ct = default)
+    {
+        var code = icao.ToUpperInvariant();
+        var key = $"metar:{code}";
+        var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+
+        // 1. Check cache first
+        if (_cache.TryGetValue(key, out Metar? cached) && cached is not null)
         {
-            var key = $"metar:{icao.ToUpperInvariant()}";
-            if (_cache.TryGetValue(key, out Metar? hit) && hit is not null)
+            _stamp.Result = "HIT";
+            _log.LogInformation($"[PID {pid}] CACHE HIT {key}");
+            return cached;
+        }
+
+        // 2. Try to fetch fresh
+        try
+        {
+            var fresh = await _inner.GetMetarAsync(code, ct);
+            if (fresh is null)
             {
-                _stamp.Result = "HIT";
-                _log.LogInformation("CACHE HIT {Key}", key);
-                return hit;
+                _stamp.Result = "MISS";
+                _log.LogInformation($"[PID {pid}] CACHE MISS (no data) {key}");
+                return null;
             }
 
-            var metar = await _inner.GetMetarAsync(icao, ct);
-            if (metar is not null)
+            _cache.Set(key, fresh, new MemoryCacheEntryOptions
             {
-                _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.CacheMinutes));
-            }
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(Math.Max(1, _opt.CacheMinutes))
+            });
+
             _stamp.Result = "MISS";
-            _log.LogInformation("CACHE MISS {Key}", key);
-            return metar;
+            _log.LogInformation($"[PID {pid}] CACHE MISS -> stored {key}");
+            return fresh;
         }
+        catch (Exception ex) when (_opt.ServeStaleUpToMinutes > 0)
+        {
+            // 3. On error, try to serve fallback from cache
+            if (_cache.TryGetValue(key, out Metar? stale) && stale is not null)
+            {
+                var ageMin = (int)Math.Round((DateTime.UtcNow - stale.Observed).TotalMinutes);
+                if (ageMin <= _opt.ServeStaleUpToMinutes)
+                {
+                    _stamp.Result = "FALLBACK";
+                    _log.LogWarning(ex, $"[PID {pid}] Upstream failed; serving FALLBACK for {code} (age={ageMin}m) {key}");
+                    return stale;
+                }
+            }
+
+            _stamp.Result = "MISS";
+            _log.LogError(ex, $"[PID {pid}] Upstream failed; no fallback available for {code} {key}");
+            return null;
+        }
+    }
+
+
     }
 }

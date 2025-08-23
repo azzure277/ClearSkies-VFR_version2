@@ -10,7 +10,13 @@
         // Minutes after which data is stale (warn UI, still return)
         public int StaleAfterMinutes { get; set; } = 15;
 
-        // Minutes after which data is critically stale (big banner). null = off
-        public int? CriticallyStaleAfterMinutes { get; set; } = 60;
+    /// <summary>
+    /// Max age (minutes) we are willing to serve from cache when upstream fails.
+    /// Set null to disable serving fallback.
+    /// </summary>
+    public int? ServeStaleUpToMinutes { get; set; } = 120;
+
+    // Minutes after which data is critically stale (big banner). null = off
+    public int? CriticallyStaleAfterMinutes { get; set; } = 60;
     }
 }

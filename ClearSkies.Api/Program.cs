@@ -1,3 +1,5 @@
+
+
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
@@ -9,8 +11,12 @@ using ClearSkies.Infrastructure.Runways;
 using ClearSkies.Domain.Options; // Added for WeatherOptions
 using ClearSkies.Infrastructure.Weather;
 
+// ...existing code...
 var builder = WebApplication.CreateBuilder(args);
-// Register the stub provider
+builder.Services.AddLogging();
+// Add ResponseCaching middleware for shared/proxy cache friendliness
+builder.Services.AddResponseCaching();
+// Register the normal weather provider
 builder.Services.AddScoped<IWeatherProvider, InMemoryWeatherProvider>();
 builder.Services.Decorate<IWeatherProvider, ClearSkies.Infrastructure.Weather.CachingWeatherProvider>();
 
@@ -72,7 +78,10 @@ app.MapGet("/health", (Microsoft.Extensions.Options.IOptions<ClearSkies.Domain.O
 // Echo endpoint for ICAO
 app.MapGet("/echo/{icao}", (string icao) => Results.Ok(new { icao }));
 
+
+app.UseResponseCaching();
 app.MapControllers();
+
 app.Run();
 
 app.MapGet("/airports/{icao}/runways",
