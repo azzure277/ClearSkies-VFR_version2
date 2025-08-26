@@ -4,6 +4,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using ClearSkies.Domain;
+using ClearSkies.Infrastructure;
 using ClearSkies.Domain.Diagnostics;
 using ClearSkies.Api.Services;
 using NSubstitute;
@@ -22,7 +23,7 @@ public class ConditionsServiceTests
             270, 10, null, 10, 500, 20, 10, 29.92m
         );
         var provider = Substitute.For<IWeatherProvider>();
-        provider.GetMetarAsync("KSFO", Arg.Any<CancellationToken>()).Returns(Task.FromResult(metar));
+    provider.GetMetarAsync("KSFO", Arg.Any<CancellationToken>()).Returns(Task.FromResult<Metar?>(metar));
 
         var opts = Options.Create(new WeatherOptions { StaleAfterMinutes = 15 });
         var stamp = Substitute.For<ICacheStamp>();

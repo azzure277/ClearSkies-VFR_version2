@@ -99,6 +99,20 @@
 			"label": "Build ClearSkies.Api",
 			"type": "shell",
 			"command": "dotnet build ClearSkies.Api/ClearSkies.Api.csproj"
+		},
+		{
+			"label": "Run ClearSkies.Api",
+			"type": "shell",
+			"command": "dotnet run --project ClearSkies.Api/ClearSkies.Api.csproj",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Run ClearSkies.Api",
+			"type": "shell",
+			"command": "dotnet run --project ClearSkies.Api/ClearSkies.Api.csproj",
+			"isBackground": true,
+			"group": "build"
 		}
 	]
 }
