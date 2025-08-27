@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClearSkies.Domain\ClearSkies.Domain.csproj" />
+  <ProjectReference Include="..\ClearSkies.Infrastructure\ClearSkies.Infrastructure.csproj" />
+  <ProjectReference Include="..\ClearSkies.Api\ClearSkies.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
