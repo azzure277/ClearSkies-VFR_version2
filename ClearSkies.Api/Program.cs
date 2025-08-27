@@ -5,6 +5,7 @@ using ClearSkies.Infrastructure;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
 using ClearSkies.Infrastructure.Runways;
+using Microsoft.Extensions.Caching.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +16,21 @@ builder.Services.AddSwaggerGen();
 // Register services by type so DI supplies all constructor arguments automatically
 builder.Services.AddSingleton<ClearSkies.Domain.Aviation.IRunwayCatalog, ClearSkies.Infrastructure.Runways.InMemoryRunwayCatalog>();
 builder.Services.AddSingleton<IAirportCatalog, InMemoryAirportCatalog>();
-builder.Services.AddHttpClient<IMetarSource, AvwxMetarSource>();
+
+// Register the inner AvwxMetarSource for use by the cache
+builder.Services.AddHttpClient<AvwxMetarSource>();
+
+// Register IHttpContextAccessor for header logic
+builder.Services.AddHttpContextAccessor();
+
+// Register CachingWeatherProvider as the IMetarSource
+builder.Services.AddScoped<IMetarSource>(sp =>
+    new CachingWeatherProvider(
+        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<AvwxMetarSource>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<WeatherOptions>>(),
+        sp.GetRequiredService<IHttpContextAccessor>()
+    ));
 
 // Options binding
 builder.Services
