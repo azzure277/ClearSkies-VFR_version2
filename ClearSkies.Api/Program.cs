@@ -7,74 +7,75 @@ using ClearSkies.Domain.Aviation;
 using ClearSkies.Infrastructure.Runways;
 using Microsoft.Extensions.Caching.Memory;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Add Swagger
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// Register services by type so DI supplies all constructor arguments automatically
-builder.Services.AddSingleton<ClearSkies.Domain.Aviation.IRunwayCatalog, ClearSkies.Infrastructure.Runways.InMemoryRunwayCatalog>();
-builder.Services.AddSingleton<IAirportCatalog, InMemoryAirportCatalog>();
-
-// Register the inner AvwxMetarSource for use by the cache
-builder.Services.AddHttpClient<AvwxMetarSource>();
-
-// Register IHttpContextAccessor for header logic
-builder.Services.AddHttpContextAccessor();
-
-// Register CachingWeatherProvider as the IMetarSource
-builder.Services.AddScoped<IMetarSource>(sp =>
-    new CachingWeatherProvider(
-        sp.GetRequiredService<IMemoryCache>(),
-        sp.GetRequiredService<AvwxMetarSource>(),
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<WeatherOptions>>(),
-        sp.GetRequiredService<IHttpContextAccessor>()
-    ));
-
-// Options binding
-builder.Services
-    .AddOptions<WeatherOptions>()
-    .Bind(builder.Configuration.GetSection("Weather"))
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
-
-// Let DI construct ConditionsService (no lambda!)
-builder.Services.AddScoped<IConditionsService, ConditionsService>();
-
-// Add controllers
-builder.Services.AddControllers();
-builder.Services.AddMemoryCache();
-
-var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
+public class Program
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-// Health check endpoint
-app.MapGet("/health", () => Results.Ok("OK"));
-
-// Echo endpoint for ICAO
-app.MapGet("/echo/{icao}", (string icao) => Results.Ok(new { icao }));
-
-app.MapControllers();
-app.Run();
-
-app.MapGet("/airports/{icao}/runways",
-    (string icao, ClearSkies.Domain.Aviation.IRunwayCatalog cat) =>
+    public static void Main(string[] args)
     {
-        var arpt = cat.GetAirportRunways(icao);
-        if (arpt == null || arpt.Runways == null || arpt.Runways.Count == 0)
-            return Results.NotFound();
-        var list = arpt.Runways.Select(x => new { runway = x.Designator, headingDeg = x.MagneticHeadingDeg });
-        return Results.Ok(list);
-    })
-   .WithTags("Airport Runways");
+        var builder = WebApplication.CreateBuilder(args);
 
+        // Add Swagger
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen();
 
-// dotnet clean c:\Users\brand\source\repos\ClearSkies\ClearSkies.sln
-// dotnet build c:\Users\brand\source\repos\ClearSkies\ClearSkies.sln
-// dotnet run --project c:\Users\brand\source\repos\ClearSkies\ClearSkies.Api\ClearSkies.Api.csproj
+        // Register services by type so DI supplies all constructor arguments automatically
+        builder.Services.AddSingleton<ClearSkies.Domain.Aviation.IRunwayCatalog, ClearSkies.Infrastructure.Runways.InMemoryRunwayCatalog>();
+        builder.Services.AddSingleton<IAirportCatalog, InMemoryAirportCatalog>();
+
+        // Register the inner AvwxMetarSource for use by the cache
+        builder.Services.AddHttpClient<AvwxMetarSource>();
+
+        // Register IHttpContextAccessor for header logic
+        builder.Services.AddHttpContextAccessor();
+
+        // Register CachingWeatherProvider as the IMetarSource
+        builder.Services.AddScoped<IMetarSource>(sp =>
+            new CachingWeatherProvider(
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<AvwxMetarSource>(),
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<WeatherOptions>>(),
+                sp.GetRequiredService<IHttpContextAccessor>()
+            ));
+
+        // Options binding
+        builder.Services
+            .AddOptions<WeatherOptions>()
+            .Bind(builder.Configuration.GetSection("Weather"))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Let DI construct ConditionsService (no lambda!)
+        builder.Services.AddScoped<IConditionsService, ConditionsService>();
+
+        // Add controllers
+        builder.Services.AddControllers();
+        builder.Services.AddMemoryCache();
+
+        var app = builder.Build();
+
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
+        // Health check endpoint
+        app.MapGet("/health", () => Results.Ok("OK"));
+
+        // Echo endpoint for ICAO
+        app.MapGet("/echo/{icao}", (string icao) => Results.Ok(new { icao }));
+
+        app.MapControllers();
+        app.MapGet("/airports/{icao}/runways",
+            (string icao, ClearSkies.Domain.Aviation.IRunwayCatalog cat) =>
+            {
+                var arpt = cat.GetAirportRunways(icao);
+                if (arpt == null || arpt.Runways == null || arpt.Runways.Count == 0)
+                    return Results.NotFound();
+                var list = arpt.Runways.Select(x => new { runway = x.Designator, headingDeg = x.MagneticHeadingDeg });
+                return Results.Ok(list);
+            })
+           .WithTags("Airport Runways");
+
+        app.Run();
+    }
+}

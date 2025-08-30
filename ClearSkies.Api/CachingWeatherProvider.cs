@@ -33,13 +33,12 @@ public sealed class CachingWeatherProvider : IMetarSource
     public async Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
     {
         var key = $"metar:{icao.Trim().ToUpperInvariant()}";
-        if (_cache.TryGetValue(key, out Metar? hit))
+    if (_cache.TryGetValue(key, out Metar? hit) && hit != null)
         {
             var now = _clock();
             var ageMinutes = (now - hit.Observed).TotalMinutes;
             if (ageMinutes <= _opt.Value.CacheMinutes)
             {
-                // Set header for cache hit
                 var ctx = _httpContextAccessor?.HttpContext;
                 if (ctx?.Response?.Headers != null)
                     ctx.Response.Headers["X-Cache-Present"] = "true";
@@ -49,36 +48,71 @@ public sealed class CachingWeatherProvider : IMetarSource
             _cache.Remove(key);
         }
 
-        var metar = await _inner.GetLatestAsync(icao, ct);
+        Metar? metar = null;
+        try
+        {
+            metar = await _inner.GetLatestAsync(icao, ct);
+        }
+        catch
+        {
+            // Upstream failed, check for stale
+            if (_cache.TryGetValue(key, out Metar? stale) && stale != null)
+            {
+                var now = _clock();
+                var ageMinutes = (now - stale.Observed).TotalMinutes;
+                var maxStale = _opt.Value.ServeStaleUpToMinutes ?? 5;
+                if (ageMinutes <= maxStale)
+                {
+                    var ctx = _httpContextAccessor?.HttpContext;
+                    if (ctx?.Response?.Headers != null)
+                    {
+                        ctx.Response.Headers["Warning"] = "110 - Response is Stale";
+                        ctx.Response.Headers["X-Cache-Present"] = "true";
+                    }
+                    return stale;
+                }
+                // If too old, remove from cache
+                _cache.Remove(key);
+            }
+            // No valid stale, treat as miss
+            var missCtx2 = _httpContextAccessor?.HttpContext;
+            if (missCtx2?.Response?.Headers != null)
+                missCtx2.Response.Headers["X-Cache-Present"] = "false";
+            return null;
+        }
+
         if (metar != null)
         {
             _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
-            // Set header for cache miss
             var missCtx = _httpContextAccessor?.HttpContext;
             if (missCtx?.Response?.Headers != null)
                 missCtx.Response.Headers["X-Cache-Present"] = "false";
             return metar;
         }
 
-        // Upstream failed, check for stale
-        if (_cache.TryGetValue(key, out Metar? stale))
+        // Upstream returned null, check for stale
+        if (_cache.TryGetValue(key, out Metar? stale2))
+        if (_cache.TryGetValue(key, out Metar? fallback) && fallback != null)
         {
             var now = _clock();
-            var ageMinutes = (now - stale.Observed).TotalMinutes;
-            if (ageMinutes <= _opt.Value.CacheMinutes)
+            var ageMinutes = (now - fallback.Observed).TotalMinutes;
+            var maxStale = _opt.Value.ServeStaleUpToMinutes ?? 5;
+            if (ageMinutes <= maxStale)
             {
                 var ctx = _httpContextAccessor?.HttpContext;
                 if (ctx?.Response?.Headers != null)
+                {
+                    ctx.Response.Headers["Warning"] = "110 - Response is Stale";
                     ctx.Response.Headers["X-Cache-Present"] = "true";
-                return stale;
+                }
+                return fallback;
             }
             // If too old, remove from cache
             _cache.Remove(key);
         }
-        // No valid stale, treat as miss
-        var missCtx2 = _httpContextAccessor?.HttpContext;
-        if (missCtx2?.Response?.Headers != null)
-            missCtx2.Response.Headers["X-Cache-Present"] = "false";
+        var missCtx3 = _httpContextAccessor?.HttpContext;
+        if (missCtx3?.Response?.Headers != null)
+            missCtx3.Response.Headers["X-Cache-Present"] = "false";
         return null;
     }
 }
