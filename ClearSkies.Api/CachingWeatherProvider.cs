@@ -34,19 +34,21 @@ public sealed class CachingWeatherProvider : IMetarSource
     {
         var key = $"metar:{icao.Trim().ToUpperInvariant()}";
     if (_cache.TryGetValue(key, out Metar? hit) && hit != null)
+    {
+        var now = _clock();
+        var ageMinutes = (now - hit.Observed).TotalMinutes;
+        if (ageMinutes <= _opt.Value.CacheMinutes)
         {
-            var now = _clock();
-            var ageMinutes = (now - hit.Observed).TotalMinutes;
-            if (ageMinutes <= _opt.Value.CacheMinutes)
+            var ctx = _httpContextAccessor?.HttpContext;
+            if (ctx?.Response?.Headers != null)
             {
-                var ctx = _httpContextAccessor?.HttpContext;
-                if (ctx?.Response?.Headers != null)
-                    ctx.Response.Headers["X-Cache-Present"] = "true";
-                return hit;
+                ctx.Response.Headers["X-Cache-Present"] = "true";
+                ctx.Response.Headers.Remove("Warning"); // Clear Warning header if present
             }
-            // Too old: remove and treat as miss
-            _cache.Remove(key);
+            return hit;
         }
+        // Don't remove cache entry yet; allow stale-on-error fallback
+    }
 
         Metar? metar = null;
         try
@@ -61,7 +63,7 @@ public sealed class CachingWeatherProvider : IMetarSource
                 var now = _clock();
                 var ageMinutes = (now - stale.Observed).TotalMinutes;
                 var maxStale = _opt.Value.ServeStaleUpToMinutes ?? 5;
-                if (ageMinutes <= maxStale)
+                if (ageMinutes > _opt.Value.CacheMinutes && ageMinutes <= maxStale)
                 {
                     var ctx = _httpContextAccessor?.HttpContext;
                     if (ctx?.Response?.Headers != null)
@@ -77,7 +79,10 @@ public sealed class CachingWeatherProvider : IMetarSource
             // No valid stale, treat as miss
             var missCtx2 = _httpContextAccessor?.HttpContext;
             if (missCtx2?.Response?.Headers != null)
+            {
                 missCtx2.Response.Headers["X-Cache-Present"] = "false";
+                missCtx2.Response.Headers.Remove("Warning"); // Clear Warning header if present
+            }
             return null;
         }
 
@@ -86,7 +91,10 @@ public sealed class CachingWeatherProvider : IMetarSource
             _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
             var missCtx = _httpContextAccessor?.HttpContext;
             if (missCtx?.Response?.Headers != null)
+            {
                 missCtx.Response.Headers["X-Cache-Present"] = "false";
+                missCtx.Response.Headers.Remove("Warning"); // Clear Warning header if present
+            }
             return metar;
         }
 
@@ -112,7 +120,10 @@ public sealed class CachingWeatherProvider : IMetarSource
         }
         var missCtx3 = _httpContextAccessor?.HttpContext;
         if (missCtx3?.Response?.Headers != null)
+        {
             missCtx3.Response.Headers["X-Cache-Present"] = "false";
+            missCtx3.Response.Headers.Remove("Warning"); // Clear Warning header if present
+        }
         return null;
     }
 }

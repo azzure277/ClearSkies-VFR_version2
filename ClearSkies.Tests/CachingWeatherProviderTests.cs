@@ -92,6 +92,46 @@ namespace ClearSkies.Tests
             // Assert
             Assert.Null(result2); // No stale served
         }
+
+        [Fact]
+        public async Task StaleOnError_SetsWarningHeader()
+        {
+            // Arrange
+            var icao = "KJFK";
+            var fixedNow = System.DateTime.UtcNow;
+            // Set cache entry age to 5 min, CacheMinutes to 2, ServeStaleUpToMinutes to 10
+            var metar = new Metar(icao, fixedNow.AddMinutes(-5), 0, 0, 0, 0, 0, 0, 0, 0); // Age 5 min
+            _cache.Set($"metar:{icao}", metar, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = System.TimeSpan.FromMinutes(10) });
+
+            var inner = new FailingMetarSource();
+            var provider = new CachingWeatherProvider(
+                _cache,
+                inner,
+                Microsoft.Extensions.Options.Options.Create(new WeatherOptions { CacheMinutes = 2, ServeStaleUpToMinutes = 10 }),
+                _httpContextAccessor,
+                () => fixedNow
+            );
+
+            // Act
+            var result = await provider.GetLatestAsync(icao, CancellationToken.None);
+            // Ensure headers are set after call
+            var headers = _httpContext.Response.Headers;
+            var warningHeader = headers.ContainsKey("Warning") ? headers["Warning"].ToString() : string.Empty;
+            var cacheHeader = headers.ContainsKey("X-Cache-Present") ? headers["X-Cache-Present"].ToString() : string.Empty;
+
+            // Debug output: print all headers
+            Console.WriteLine("Response headers after call:");
+            foreach (var kvp in headers)
+            {
+                Console.WriteLine($"{kvp.Key}: {kvp.Value}");
+            }
+
+            // Assert
+            Assert.NotNull(result); // Stale served
+            Assert.False(string.IsNullOrEmpty(warningHeader)); // Warning header should be set
+            Assert.Contains("110", warningHeader); // Warning header present
+            Assert.Equal("true", cacheHeader); // Cache header present
+        }
     }
 
     // Minimal fake provider for testing
