@@ -1,4 +1,4 @@
-
+// ...existing code...
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
 using ClearSkies.Infrastructure;
@@ -7,123 +7,126 @@ using Microsoft.Extensions.Options;
 using System.Threading;
 using System.Threading.Tasks;
 
-
-public sealed class CachingWeatherProvider : IMetarSource
+namespace ClearSkies.Api
 {
-    private readonly IMemoryCache _cache;
-    private readonly IMetarSource _inner;
-    private readonly IOptions<WeatherOptions> _opt;
-    private readonly IHttpContextAccessor? _httpContextAccessor;
-    private readonly Func<DateTime> _clock;
+    public sealed class CachingWeatherProvider : IMetarSource
+    {
+        private readonly IMemoryCache _cache;
+        private readonly IMetarSource _inner;
+        private readonly IOptions<WeatherOptions> _opt;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
+        private readonly Func<DateTime> _clock;
+        private readonly ClearSkies.Api.Http.IEtagService _etagService;
 
-    public CachingWeatherProvider(
-        IMemoryCache cache,
-        IMetarSource inner,
-        IOptions<WeatherOptions> opt,
-        IHttpContextAccessor? httpContextAccessor = null,
-        Func<DateTime>? clock = null)
-    {
-        _cache = cache;
-        _inner = inner;
-        _opt = opt;
-        _httpContextAccessor = httpContextAccessor;
-        _clock = clock ?? (() => DateTime.UtcNow);
-    }
-
-    public async Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
-    {
-        var key = $"metar:{icao.Trim().ToUpperInvariant()}";
-    if (_cache.TryGetValue(key, out Metar? hit) && hit != null)
-    {
-        var now = _clock();
-        var ageMinutes = (now - hit.Observed).TotalMinutes;
-        if (ageMinutes <= _opt.Value.CacheMinutes)
+        public CachingWeatherProvider(
+            IMemoryCache cache,
+            IMetarSource inner,
+            IOptions<WeatherOptions> opt,
+            IHttpContextAccessor? httpContextAccessor,
+            ClearSkies.Api.Http.IEtagService etagService,
+            Func<DateTime>? clock = null)
         {
+            _cache = cache;
+            _inner = inner;
+            _opt = opt;
+            _httpContextAccessor = httpContextAccessor;
+            _etagService = etagService;
+            _clock = clock ?? (() => DateTime.UtcNow);
+        }
+
+        private string GetValidEtag(string rawMetar)
+        {
+            // Compute SHA256 hash of rawMetar for deterministic, RFC-compliant ETag
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawMetar ?? string.Empty));
+            var hex = BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant();
+            var validEtag = $"W/\"{hex}\"";
+            System.Diagnostics.Debug.WriteLine($"[DIAG] Provider computed SHA256 ETag: {validEtag}");
+            return validEtag;
+        }
+
+        public async Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(icao))
+                return null;
+            var key = $"metar:{icao.Trim().ToUpperInvariant()}";
             var ctx = _httpContextAccessor?.HttpContext;
-            if (ctx?.Response?.Headers != null)
+            System.Diagnostics.Debug.WriteLine($"[DIAG] Provider cache key: {key}");
+            if (_cache is MemoryCache mcBefore)
             {
-                ctx.Response.Headers["X-Cache-Present"] = "true";
-                ctx.Response.Headers.Remove("Warning"); // Clear Warning header if present
+                System.Diagnostics.Debug.WriteLine($"[DIAG] Provider cache count before: {mcBefore.Count}");
             }
-            return hit;
-        }
-        // Don't remove cache entry yet; allow stale-on-error fallback
-    }
 
-        Metar? metar = null;
-        try
-        {
-            metar = await _inner.GetLatestAsync(icao, ct);
-        }
-        catch
-        {
-            // Upstream failed, check for stale
-            if (_cache.TryGetValue(key, out Metar? stale) && stale != null)
+            // Try cache HIT (early return, set header once, always remove warning)
+            if (_cache.TryGetValue(key, out Metar? cached) && cached != null)
             {
-                var now = _clock();
-                var ageMinutes = (now - stale.Observed).TotalMinutes;
-                var maxStale = _opt.Value.ServeStaleUpToMinutes ?? 5;
-                if (ageMinutes > _opt.Value.CacheMinutes && ageMinutes <= maxStale)
+                System.Diagnostics.Debug.WriteLine($"[TRACE] Provider: CACHE HIT for {icao}");
+                if (ctx?.Response?.HasStarted == false)
                 {
-                    var ctx = _httpContextAccessor?.HttpContext;
-                    if (ctx?.Response?.Headers != null)
-                    {
-                        ctx.Response.Headers["Warning"] = "110 - Response is Stale";
-                        ctx.Response.Headers["X-Cache-Present"] = "true";
-                    }
-                    return stale;
+                    ctx.Response.Headers["X-Cache-Present"] = "true";
+                    // Remove Warning if present (cache hit is always fresh)
+                    if (ctx.Response.Headers.ContainsKey("Warning"))
+                        ctx.Response.Headers.Remove("Warning");
+                    System.Diagnostics.Debug.WriteLine($"[DIAG] Set X-Cache-Present=true on cache HIT for {icao}");
                 }
-                // If too old, remove from cache
-                _cache.Remove(key);
+                return cached;
             }
-            // No valid stale, treat as miss
-            var missCtx2 = _httpContextAccessor?.HttpContext;
-            if (missCtx2?.Response?.Headers != null)
+
+            // Cache MISS
+            if (ctx?.Response?.HasStarted == false)
             {
-                missCtx2.Response.Headers["X-Cache-Present"] = "false";
-                missCtx2.Response.Headers.Remove("Warning"); // Clear Warning header if present
+                ctx.Response.Headers["X-Cache-Present"] = "false";
+                if (ctx.Response.Headers.ContainsKey("Warning"))
+                    ctx.Response.Headers.Remove("Warning");
+                System.Diagnostics.Debug.WriteLine($"[TRACE] Provider: CACHE MISS for {icao}");
+            }
+            var fresh = await _inner.GetLatestAsync(icao, ct);
+            if (ctx?.Response?.HasStarted == false)
+            {
+                if (ctx.Response.Headers.ContainsKey("Warning"))
+                    ctx.Response.Headers.Remove("Warning");
+            }
+            if (fresh != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TRACE] Provider: FRESH FETCH for {icao}");
+                _cache.Set(key, fresh, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
+                if (ctx?.Response?.HasStarted == false)
+                {
+                    if (ctx.Response.Headers.ContainsKey("Warning"))
+                        ctx.Response.Headers.Remove("Warning");
+                }
+                return fresh;
+            }
+            // If we reach here, upstream fetch failed, try stale-on-error
+
+            // Upstream failed, try stale-on-error logic
+        if (_cache.TryGetValue(key, out Metar? stale) && stale != null && fresh == null)
+        {
+            var ageMinutes = (_clock() - stale.Observed).TotalMinutes;
+            var cacheMinutes = _opt.Value.CacheMinutes;
+            var threshold = _opt.Value.ServeStaleUpToMinutes;
+            // Only serve stale if older than cacheMinutes but within threshold
+            if (threshold > 0 && ageMinutes > cacheMinutes && ageMinutes <= threshold)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DIAG] Stale-on-error: age={ageMinutes}, cacheMinutes={cacheMinutes}, threshold={threshold}, HasStarted={ctx?.Response?.HasStarted}");
+                if (ctx?.Response?.HasStarted == false)
+                {
+                    ctx.Response.Headers["X-Cache-Present"] = "true";
+                    ctx.Response.Headers["Warning"] = "110 - Response is stale due to upstream error";
+                    System.Diagnostics.Debug.WriteLine($"[DIAG] Set Warning header on stale response");
+                }
+                return stale;
+            }
+        }
+            // No stale available, always remove warning header
+            System.Diagnostics.Debug.WriteLine($"[TRACE] Provider: NO STALE for {icao}");
+            if (ctx?.Response?.HasStarted == false)
+            {
+                if (ctx.Response.Headers.ContainsKey("Warning"))
+                    ctx.Response.Headers.Remove("Warning");
+                ctx.Response.Headers["X-Cache-Present"] = "false";
             }
             return null;
         }
-
-        if (metar != null)
-        {
-            _cache.Set(key, metar, TimeSpan.FromMinutes(_opt.Value.CacheMinutes));
-            var missCtx = _httpContextAccessor?.HttpContext;
-            if (missCtx?.Response?.Headers != null)
-            {
-                missCtx.Response.Headers["X-Cache-Present"] = "false";
-                missCtx.Response.Headers.Remove("Warning"); // Clear Warning header if present
-            }
-            return metar;
-        }
-
-        // Upstream returned null, check for stale
-        if (_cache.TryGetValue(key, out Metar? stale2))
-        if (_cache.TryGetValue(key, out Metar? fallback) && fallback != null)
-        {
-            var now = _clock();
-            var ageMinutes = (now - fallback.Observed).TotalMinutes;
-            var maxStale = _opt.Value.ServeStaleUpToMinutes ?? 5;
-            if (ageMinutes <= maxStale)
-            {
-                var ctx = _httpContextAccessor?.HttpContext;
-                if (ctx?.Response?.Headers != null)
-                {
-                    ctx.Response.Headers["Warning"] = "110 - Response is Stale";
-                    ctx.Response.Headers["X-Cache-Present"] = "true";
-                }
-                return fallback;
-            }
-            // If too old, remove from cache
-            _cache.Remove(key);
-        }
-        var missCtx3 = _httpContextAccessor?.HttpContext;
-        if (missCtx3?.Response?.Headers != null)
-        {
-            missCtx3.Response.Headers["X-Cache-Present"] = "false";
-            missCtx3.Response.Headers.Remove("Warning"); // Clear Warning header if present
-        }
-        return null;
     }
 }

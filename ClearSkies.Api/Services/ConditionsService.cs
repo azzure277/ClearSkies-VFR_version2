@@ -94,6 +94,7 @@ public sealed class ConditionsService : IConditionsService
         // Real METAR branch
         return new AirportConditionsDto {
             Icao = metar.Icao,
+            RawMetar = metar.RawMetar,
             Category = (int)category,
             ObservedUtc = metar.Observed,
             WindDirDeg = metar.WindDirDeg,

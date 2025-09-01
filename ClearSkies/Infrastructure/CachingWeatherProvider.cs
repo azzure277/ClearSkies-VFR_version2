@@ -28,15 +28,27 @@ public class CachingWeatherProvider : IWeatherProvider
 
     public async Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
     {
-    var now = _clock();
-    var normalizedIcao = icao.Trim().ToUpperInvariant();
-    var cacheKey = $"metar:{normalizedIcao}";
-    _cache.TryGetValue<Metar>(cacheKey, out var cached);
-
-        // Try upstream
-        var upstreamResult = await _inner.GetLatestAsync(icao, ct);
+        var now = _clock();
+        var normalizedIcao = icao.Trim().ToUpperInvariant();
+        var cacheKey = $"metar:{normalizedIcao}";
+        _cache.TryGetValue<Metar>(cacheKey, out var cached);
         var httpContext = _httpContextAccessor.HttpContext;
 
+        // If cache HIT and fresh, return cached
+        if (cached != null)
+        {
+            var ageMinutes = (now - cached.Observed).TotalMinutes;
+            if (ageMinutes <= _options.CacheMinutes)
+            {
+                if (httpContext != null)
+                    httpContext.Response.Headers["X-Cache-Present"] = "true";
+                cached.RawMetar += "|X-Cache-Present:true";
+                return cached;
+            }
+        }
+
+        // Otherwise, call upstream
+        var upstreamResult = await _inner.GetLatestAsync(icao, ct);
         if (upstreamResult != null)
         {
             _cache.Set(cacheKey, upstreamResult, new MemoryCacheEntryOptions
@@ -45,6 +57,7 @@ public class CachingWeatherProvider : IWeatherProvider
             });
             if (httpContext != null)
                 httpContext.Response.Headers["X-Cache-Present"] = "false";
+            upstreamResult.RawMetar += "|X-Cache-Present:false";
             return upstreamResult;
         }
 
@@ -61,12 +74,6 @@ public class CachingWeatherProvider : IWeatherProvider
                     httpContext.Response.Headers["X-Cache-Present"] = "true";
                     httpContext.Response.Headers["Warning"] = "110 - Response is stale";
                     httpContext.Response.StatusCode = 200;
-                }
-                else
-                {
-                    // If no HttpContext, set header directly on cached object for test
-                    // (simulate header logic for test context)
-                    // This is a workaround for test environments
                 }
                 return cached;
             }
