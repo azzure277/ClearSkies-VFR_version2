@@ -8,11 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using ClearSkies.Domain;
-
-// Test double for deterministic METARs
-using ClearSkies.Infrastructure;
 using ClearSkies.Api;
 
+// Test double for deterministic METARs
 public sealed class TestWeatherProvider : IMetarSource
 {
     public Metar? NextMetar { get; set; }
@@ -44,18 +42,18 @@ public class TestWebAppFactory : WebApplicationFactory<Program>
             services.AddHttpContextAccessor();
 
             // 2) Replace the *inner* provider with the test double
-                services.RemoveAll<IMetarSource>();
-                services.AddSingleton<TestWeatherProvider>(TestProvider);
+            services.RemoveAll<IMetarSource>();
+            services.AddSingleton<TestWeatherProvider>(TestProvider);
 
-                // 3) Re-introduce the *caching decorator* as the IMetarSource
-                services.AddSingleton<IMetarSource>(sp =>
-                    new CachingWeatherProvider(
-                        cache: sp.GetRequiredService<IMemoryCache>(),
-                        inner: sp.GetRequiredService<TestWeatherProvider>(),
-                        opt: Microsoft.Extensions.Options.Options.Create(new WeatherOptions { CacheMinutes = 10 }),
-                        httpContextAccessor: sp.GetRequiredService<IHttpContextAccessor>(),
-                        etagService: new ClearSkies.Api.Http.EtagService()
-                    ));
+            // 3) Re-introduce the *caching decorator* as the IMetarSource
+            services.AddSingleton<IMetarSource>(sp =>
+                new CachingWeatherProvider(
+                    cache: sp.GetRequiredService<IMemoryCache>(),
+                    inner: sp.GetRequiredService<TestWeatherProvider>(),
+                    opt: Microsoft.Extensions.Options.Options.Create(new WeatherOptions { CacheMinutes = 10 }),
+                    httpContextAccessor: sp.GetRequiredService<IHttpContextAccessor>(),
+                    etagService: new ClearSkies.Api.Http.EtagService()
+                ));
         });
     }
 }

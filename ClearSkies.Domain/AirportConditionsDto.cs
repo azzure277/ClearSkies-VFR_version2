@@ -20,6 +20,7 @@ namespace ClearSkies.Domain
         public decimal CrosswindKt { get; set; }
         public int DensityAltitudeFt { get; set; }
         public bool IsStale { get; set; }
+        public string? CacheResult { get; set; }
         public int AgeMinutes { get; set; }
     }
 }
