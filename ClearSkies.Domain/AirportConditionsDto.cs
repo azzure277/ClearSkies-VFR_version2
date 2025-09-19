@@ -5,6 +5,7 @@ namespace ClearSkies.Domain
     public sealed class AirportConditionsDto
     {
         public string Icao { get; set; } = "";
+        public string RawMetar { get; set; } = "";
         public int Category { get; set; }
         public DateTime ObservedUtc { get; set; }
         public decimal WindDirDeg { get; set; }
@@ -21,6 +22,11 @@ namespace ClearSkies.Domain
         public bool IsStale { get; set; }
         public string? CacheResult { get; set; }
         public int AgeMinutes { get; set; }
+    // New fields for runway support
+    public string? Runway { get; set; }
+    public int? RunwayHeadingDeg { get; set; }
+    // Crosswind side: "left" or "right"
+    public string? CrosswindSide { get; set; }
     }
 }
 

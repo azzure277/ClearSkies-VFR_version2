@@ -1,6 +1,6 @@
-﻿using System.Collections.Concurrent;
-
-namespace ClearSkies.Infrastructure;
+﻿
+using System.Collections.Concurrent;
+namespace ClearSkies.Infrastructure.Airports;
 
 /// <summary>
 /// Simple in-memory airport catalog (ICAO -> field elevation in feet MSL).

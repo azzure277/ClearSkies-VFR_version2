@@ -10,16 +10,16 @@ namespace ClearSkies.Infrastructure.Weather
         {
             // Return a static METAR
             var metar = new Metar(
-                Icao: icao,
-                Observed: DateTime.UtcNow.AddMinutes(-5),
-                WindDirDeg: 180,
-                WindKt: 10,
-                GustKt: null,
-                VisibilitySm: 10,
-                CeilingFtAgl: 5000,
-                TemperatureC: 29,
-                DewpointC: 17,
-                AltimeterInHg: 30.05m
+                icao: icao,
+                observed: DateTime.UtcNow.AddMinutes(-5),
+                windDirDeg: 180,
+                windKt: 10,
+                gustKt: null,
+                visibilitySm: 10,
+                ceilingFtAgl: 5000,
+                temperatureC: 29,
+                dewpointC: 17,
+                altimeterInHg: 30.05m
             );
             return Task.FromResult<Metar?>(metar);
         }

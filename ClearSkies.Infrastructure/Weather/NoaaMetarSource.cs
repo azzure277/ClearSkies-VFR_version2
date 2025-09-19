@@ -70,16 +70,16 @@ public sealed class NoaaMetarSource : IMetarSource
                 .Min();
 
             return new Metar(
-                Icao: icao,
-                Observed: observed,
-                WindDirDeg: windDir,
-                WindKt: windKt,
-                GustKt: gustKt,
-                VisibilitySm: visSm,
-                CeilingFtAgl: ceilingFtAgl,
-                TemperatureC: tempC,
-                DewpointC: dewC,
-                AltimeterInHg: altInHg
+                icao,
+                observed,
+                windDir,
+                windKt,
+                gustKt,
+                visSm,
+                ceilingFtAgl,
+                tempC,
+                dewC,
+                altInHg
             );
         }
         catch (HttpRequestException)
