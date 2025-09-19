@@ -1,5 +1,6 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
-using ClearSkies.Tests;
+// using ClearSkies.Tests; // Remove to avoid confusion
 using ClearSkies.Infrastructure; // For IMetarSource
 
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,50 +11,113 @@ using Microsoft.AspNetCore.Hosting;
 using ClearSkies.Domain;
 using ClearSkies.Api;
 
-// Test double for deterministic METARs
-public sealed class TestWeatherProvider : IMetarSource
-{
-    public Metar? NextMetar { get; set; }
-    public bool FailNext { get; set; }
+using System;
+// Add using for TestAirportCatalog in global namespace
+using ClearSkies.Tests;
 
-    public Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
+
+
+namespace ClearSkies.Tests
+{
+    // Test double for deterministic METARs
+    public sealed class TestWeatherProvider : IMetarSource, ClearSkies.Domain.IWeatherProvider
     {
-        if (FailNext)
-        {
-            FailNext = false;
-            throw new HttpRequestException("Simulated upstream failure");
-        }
-        // Always return the seeded METAR unless explicitly set to null
-        return Task.FromResult(NextMetar);
-    }
-}
+    public Metar? NextMetar { get; set; }
+        public bool FailNext { get; set; }
 
-public class TestWebAppFactory : WebApplicationFactory<Program>
-{
+        public Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
+            => GetMetarAsync(icao, ct);
+
+        public Task<Metar?> GetMetarAsync(string icao, CancellationToken ct = default)
+        {
+            if (FailNext)
+            {
+                FailNext = false;
+                Console.WriteLine($"[TestWeatherProvider] Simulating upstream failure for {icao}");
+                throw new HttpRequestException("Simulated upstream failure");
+            }
+            // Return the seeded METAR once, then null to allow cache HIT
+            var metar = NextMetar;
+            NextMetar = null;
+            if (metar != null)
+            {
+                metar = new Metar(
+                    metar.Icao,
+                    TestWebAppFactory._clock(),
+                    metar.WindDirDeg,
+                    metar.WindKt,
+                    metar.GustKt,
+                    metar.VisibilitySm,
+                    metar.CeilingFtAgl,
+                    metar.TemperatureC,
+                    metar.DewpointC,
+                    metar.AltimeterInHg
+                )
+                {
+                    RawMetar = metar.RawMetar
+                };
+                Console.WriteLine($"[TestWeatherProvider] Returning seeded METAR for {icao} at {metar.Observed:o}");
+            }
+            else
+            {
+                Console.WriteLine($"[TestWeatherProvider] Returning null for {icao} (should trigger cache)");
+            }
+            return Task.FromResult(metar);
+        }
+    }
+
+
+    public class TestWebAppFactory : WebApplicationFactory<Program>
+    {
+    // Use a fixed clock for deterministic cache age in tests
+    internal static DateTime _fixedNow = new DateTime(2025, 9, 8, 12, 0, 0, DateTimeKind.Utc);
+    internal static Func<DateTime> _clock = () => _fixedNow;
     public TestWeatherProvider TestProvider { get; } = new();
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.ConfigureServices(services =>
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            // 1) Use ONE shared MemoryCache across requests
-            services.RemoveAll<IMemoryCache>();
-            services.AddSingleton<IMemoryCache>(_ => new MemoryCache(new MemoryCacheOptions { TrackStatistics = true }));
-            services.AddHttpContextAccessor();
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((context, configBuilder) =>
+            {
+                var dict = new Dictionary<string, string?>
+                {
+                    ["UseStaticTestCache"] = "true",
+                    ["Weather:ServeStaleUpToMinutes"] = "120"
+                };
+                configBuilder.AddInMemoryCollection(dict);
+            });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IMemoryCache>();
+                services.AddMemoryCache();
+                services.AddHttpContextAccessor();
 
-            // 2) Replace the *inner* provider with the test double
-            services.RemoveAll<IMetarSource>();
-            services.AddSingleton<TestWeatherProvider>(TestProvider);
+                services.RemoveAll<IMetarCache>();
+                services.AddSingleton<IMetarCache>(sp => new StaticTestMetarCache(_clock));
 
-            // 3) Re-introduce the *caching decorator* as the IMetarSource
-            services.AddSingleton<IMetarSource>(sp =>
-                new CachingWeatherProvider(
-                    cache: sp.GetRequiredService<IMemoryCache>(),
-                    inner: sp.GetRequiredService<TestWeatherProvider>(),
-                    opt: Microsoft.Extensions.Options.Options.Create(new WeatherOptions { CacheMinutes = 10 }),
-                    httpContextAccessor: sp.GetRequiredService<IHttpContextAccessor>(),
-                    etagService: new ClearSkies.Api.Http.EtagService()
-                ));
-        });
+                services.RemoveAll<IWeatherProvider>();
+                services.RemoveAll<IMetarSource>();
+                services.AddSingleton<TestWeatherProvider>(TestProvider);
+                services.AddSingleton<IMetarSource>(sp => sp.GetRequiredService<TestWeatherProvider>());
+                // Register CachingWeatherProvider as IWeatherProvider, wrapping TestWeatherProvider
+                // Register CachingWeatherProvider as IWeatherProvider, wrapping TestWeatherProvider (cache bypassed)
+                services.AddSingleton<ClearSkies.Infrastructure.Weather.CachingWeatherProvider>(sp =>
+                    new ClearSkies.Infrastructure.Weather.CachingWeatherProvider(
+                        new ClearSkies.Infrastructure.MetarSourceWeatherProviderAdapter(sp.GetRequiredService<IMetarSource>()),
+                        _clock
+                    ));
+                services.AddSingleton<IWeatherProvider>(sp => sp.GetRequiredService<ClearSkies.Infrastructure.Weather.CachingWeatherProvider>());
+
+                // Replace the airport catalog with a test version containing KSFO, KJFK, KLAX
+                services.RemoveAll<IAirportCatalog>();
+                services.AddSingleton<IAirportCatalog, TestAirportCatalog>();
+            });
+        }
     }
+
+}
+
+public class AirportConditionsDtoLike
+{
+    // Add members as needed
 }

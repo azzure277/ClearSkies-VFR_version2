@@ -1,14 +1,10 @@
-
 using Microsoft.AspNetCore.Mvc;
 using ClearSkies.Domain.Options;
 using ClearSkies.Api.Services;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
-<<<<<<< HEAD
-=======
 using ClearSkies.Api.Problems;
 using ClearSkies.Infrastructure;
->>>>>>> master
 
 namespace ClearSkies.Api.Controllers
 {
@@ -16,63 +12,53 @@ namespace ClearSkies.Api.Controllers
     [Route("airports")]
     public sealed class AirportsController : ControllerBase
     {
-<<<<<<< HEAD
-        private readonly IConditionsService _svc;
-        private readonly IRunwayCatalog _runways;
-        private readonly ClearSkies.Api.Http.IEtagService _etagService;
 
-        public AirportsController(IConditionsService svc, IRunwayCatalog runways, ClearSkies.Api.Http.IEtagService etagService)
+        private readonly ClearSkies.Infrastructure.Airports.InMemoryAirportSearchCatalog _airportSearchCatalog;
+
+        [HttpGet("search")]
+        public IActionResult SearchAirports([FromQuery(Name = "q")] string? query, [FromQuery(Name = "limit")] int? limit = 10)
         {
-            _svc = svc;
-            _runways = runways;
-            _etagService = etagService;
-=======
-    private readonly IConditionsService _svc;
-    private readonly ClearSkies.Domain.Aviation.IRunwayCatalog _runways;
-    private readonly IAirportCatalog _catalog;
-    private readonly WeatherOptions _opt;
+            // Return 400 Bad Request for missing, empty, or whitespace-only query
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest("Query parameter 'q' is required and cannot be empty.");
 
-    public AirportsController(IConditionsService svc, ClearSkies.Domain.Aviation.IRunwayCatalog runways, IAirportCatalog catalog, Microsoft.Extensions.Options.IOptions<WeatherOptions> opt)
+            var results = _airportSearchCatalog.Search(query, limit ?? 10)
+                .Select(a => new {
+                    icao = a.Icao,
+                    iata = a.Iata,
+                    name = a.Name,
+                    city = a.City,
+                    state = a.State,
+                    country = a.Country
+                })
+                .ToList();
+
+            return Ok(results);
+        }
+
+
+        private readonly IConditionsService _svc;
+        private readonly ClearSkies.Domain.Aviation.IRunwayCatalog _runways;
+        private readonly IAirportCatalog _catalog;
+        private readonly WeatherOptions _opt;
+
+        public AirportsController(
+            IConditionsService svc,
+            ClearSkies.Domain.Aviation.IRunwayCatalog runways,
+            IAirportCatalog catalog,
+            Microsoft.Extensions.Options.IOptions<WeatherOptions> opt,
+            ClearSkies.Infrastructure.Airports.InMemoryAirportSearchCatalog airportSearchCatalog)
         {
             _svc = svc;
             _runways = runways;
             _catalog = catalog;
             _opt = opt.Value;
->>>>>>> master
+            _airportSearchCatalog = airportSearchCatalog;
         }
 
+    // ...existing code...
+// ...existing code...
         [HttpGet("{icao}/conditions")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(AirportConditionsDto), StatusCodes.Status200OK)]
-<<<<<<< HEAD
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> GetConditions(string icao, [FromQuery] string? runway = null, CancellationToken ct = default)
-        {
-            // Local function for diagnostic logging
-            void LogHeaders(string context)
-            {
-                var etagVal = Response.Headers.ContainsKey("ETag") ? Response.Headers["ETag"].ToString() : "<none>";
-                var cacheVal = Response.Headers.ContainsKey("X-Cache-Present") ? Response.Headers["X-Cache-Present"].ToString() : "<none>";
-                System.Diagnostics.Debug.WriteLine($"[DIAG] {context}: ETag={etagVal}, X-Cache-Present={cacheVal}");
-            }
-
-            int? runwayMagHeading = null;
-            if (!string.IsNullOrWhiteSpace(runway))
-            {
-                if (!_runways.TryGetMagneticHeading(icao, runway, out var hdg))
-                {
-                    return NotFound(new { message = $"Runway '{runway}' not found for {icao}." });
-                }
-                runwayMagHeading = hdg;
-            }
-
-            var dto = await _svc.GetConditionsAsync(icao, runwayMagHeading ?? 0, ct);
-            if (dto is null)
-            {
-                LogHeaders("404/NotFound");
-                return NotFound();
-            }
-=======
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
@@ -81,12 +67,51 @@ namespace ClearSkies.Api.Controllers
             [FromQuery] string? runway = null,
             CancellationToken ct = default)
         {
-            // 1) Validate ICAO format
-            // ...existing validation code...
 
-            // 2) Call service
-            // Use heading=0 as default; update if you want to parse from runway
-            var dto = await _svc.GetConditionsAsync(icao, 0, ct);
+            // 1) Validate ICAO format: must be 4 letters
+            if (string.IsNullOrWhiteSpace(icao) || icao.Length != 4 || !icao.All(char.IsLetter))
+            {
+                return Problem(
+                    title: "Invalid ICAO code",
+                    detail: $"The ICAO code '{icao}' is not valid. Must be 4 letters.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    type: ProblemTypes.NoMetar);
+            }
+            // 2) If ICAO is not in catalog, return 404 (test and prod contract)
+            // NOTE: If this is not hit, test setup/catalog may be wrong
+            if (_catalog.GetElevationFt(icao) == null)
+            {
+                return Problem(
+                    title: "Unknown ICAO code",
+                    detail: $"The ICAO code '{icao}' is not recognized.",
+                    statusCode: StatusCodes.Status404NotFound,
+                    type: ProblemTypes.NoMetar);
+            }
+
+            // 3) Parse runway and look up heading
+            int heading = 0;
+            if (!string.IsNullOrWhiteSpace(runway))
+            {
+                // Try to get heading from runway catalog
+                if (_runways.TryGetMagneticHeading(icao, runway, out int magneticHeadingDeg))
+                {
+                    heading = magneticHeadingDeg;
+                }
+                else
+                {
+                    return Problem(
+                        title: "Invalid runway",
+                        detail: $"Runway '{runway}' not found for airport '{icao}'.",
+                        statusCode: StatusCodes.Status400BadRequest,
+                        type: ProblemTypes.NoMetar);
+                }
+            }
+            // 4) Call service with heading
+            var dto = await _svc.GetConditionsAsync(icao, heading, ct);
+            if (dto != null && !string.IsNullOrWhiteSpace(runway))
+            {
+                dto.Runway = runway;
+            }
             if (dto is null)
             {
                 return Problem(
@@ -94,6 +119,23 @@ namespace ClearSkies.Api.Controllers
                     detail: $"Upstream provider returned no observation for station '{icao.ToUpperInvariant()}'.",
                     statusCode: StatusCodes.Status502BadGateway,
                     type: ProblemTypes.NoMetar);
+            }
+
+            // 4) If runway is unknown, always set notice header (test and prod contract)
+            if (!string.IsNullOrWhiteSpace(runway))
+            {
+                // Use GetAirportRunways to get all known runway designators for this ICAO
+                var airportRunways = _runways.GetAirportRunways(icao);
+                var runwaySet = airportRunways?.Runways.Select(r => r.Designator).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (runwaySet == null || !runwaySet.Contains(runway))
+                {
+                    Response.Headers["X-Runway-Notice"] = "Unknown runway";
+                }
+            }
+            // Always set X-Cache header to reflect cache status for diagnostics
+            if (!string.IsNullOrWhiteSpace(dto.CacheResult))
+            {
+                Response.Headers["X-Cache"] = dto.CacheResult;
             }
 
             // --- HTTP Caching Best Practices ---
@@ -128,7 +170,7 @@ namespace ClearSkies.Api.Controllers
             if (dto.CacheResult == "FALLBACK")
             {
                 Response.Headers["X-Cache-Fallback"] = "true";
-                Response.Headers.Append("Warning", "110 - \"Response is stale\"");
+                Response.Headers["Warning"] = "110 - \"Response is stale\"";
             }
 
             // 6. (For future write endpoints) Support preconditions (If-Match/412)
@@ -136,7 +178,7 @@ namespace ClearSkies.Api.Controllers
             //     Request.Headers.TryGetValue("If-Match", out var im) && im != currentEtag;
             // if (FailsIfMatch(etag)) return StatusCode(StatusCodes.Status412PreconditionFailed);
             // --- End HTTP Caching Best Practices ---
->>>>>>> master
+// ...existing code...
 
             // Build stable ETag identity
             string stableIcao   = (dto.Icao ?? "").Trim().ToUpperInvariant();
@@ -144,7 +186,7 @@ namespace ClearSkies.Api.Controllers
             string rawCanonical = (dto.RawMetar ?? "").Trim();
             string identity     = $"{stableIcao}|{observedIso}|{rawCanonical}";
             string hex          = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)));
-            var etag            = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{hex}\"", isWeak: true);
+            var computedEtag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{hex}\"", isWeak: true);
 
             // Always set ETag header before any return
             // Return 304 NotModified if ETag matches If-None-Match BEFORE writing any response
@@ -193,14 +235,14 @@ namespace ClearSkies.Api.Controllers
                         if (Microsoft.Net.Http.Headers.EntityTagHeaderValue.TryParse(raw.Trim(), out var clientTag) &&
                             clientTag.Equals(etag))
                         {
-                            LogHeaders("304/NotModified");
+                            // Removed LogHeaders call: function no longer exists
                             return StatusCode(StatusCodes.Status304NotModified);
                         }
                     }
                 }
             }
 
-            LogHeaders("200/OK final");
+            // Removed LogHeaders call: function no longer exists
             return Ok(dto);
         }
     }

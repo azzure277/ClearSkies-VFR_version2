@@ -4,27 +4,29 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class CachingWeatherProvider : IWeatherProvider
+namespace ClearSkies.Infrastructure
 {
-    private readonly IMemoryCache _cache;
-    private readonly IMetarSource _inner;
-    private readonly WeatherOptions _options;
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly Func<DateTime> _clock;
-
-    public CachingWeatherProvider(
-        IMemoryCache cache,
-        IMetarSource inner,
-        Microsoft.Extensions.Options.IOptions<WeatherOptions> options,
-        IHttpContextAccessor httpContextAccessor,
-        Func<DateTime>? clock = null)
+    public class CachingWeatherProvider : IMetarSource
     {
-        _cache = cache;
-        _inner = inner;
-        _options = options.Value;
-        _httpContextAccessor = httpContextAccessor;
-        _clock = clock ?? (() => DateTime.UtcNow);
-    }
+        private readonly IMemoryCache _cache;
+    private readonly IMetarSource _inner;
+        private readonly WeatherOptions _options;
+        private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly Func<DateTime> _clock;
+
+        public CachingWeatherProvider(
+            IMemoryCache cache,
+            IMetarSource inner,
+            Microsoft.Extensions.Options.IOptions<WeatherOptions> options,
+            IHttpContextAccessor httpContextAccessor,
+            Func<DateTime>? clock = null)
+        {
+            _cache = cache;
+            _inner = inner;
+            _options = options.Value;
+            _httpContextAccessor = httpContextAccessor;
+            _clock = clock ?? (() => DateTime.UtcNow);
+        }
 
     public async Task<Metar?> GetLatestAsync(string icao, CancellationToken ct = default)
     {
@@ -89,4 +91,5 @@ public class CachingWeatherProvider : IWeatherProvider
         }
         return null;
     }
+}
 }

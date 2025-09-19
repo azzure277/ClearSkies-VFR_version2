@@ -4,6 +4,8 @@ namespace ClearSkies.Domain
 {
     public sealed class Metar
     {
+        // Indicates cache status: HIT, MISS, FALLBACK (for API/test diagnostics)
+        public string? CacheResult { get; set; }
         public string Icao { get; set; }
         public DateTime Observed { get; set; }
         public decimal WindDirDeg { get; set; }

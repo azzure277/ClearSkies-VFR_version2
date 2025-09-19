@@ -201,6 +201,90 @@
 			"type": "shell",
 			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
 			"group": "test"
+		},
+		{
+			"label": "Build ClearSkies.Api",
+			"type": "shell",
+			"command": "dotnet build ClearSkies.Api/ClearSkies.Api.csproj",
+			"group": "build"
+		},
+		{
+			"label": "Build ClearSkies.Api",
+			"type": "shell",
+			"command": "dotnet build ClearSkies.Api/ClearSkies.Api.csproj",
+			"group": "build"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
+		},
+		{
+			"label": "Build ClearSkies.Api",
+			"type": "shell",
+			"command": "dotnet build ClearSkies.Api/ClearSkies.Api.csproj",
+			"group": "build"
+		},
+		{
+			"label": "Test ClearSkies.Tests",
+			"type": "shell",
+			"command": "dotnet test ClearSkies.Tests/ --logger \"trx;LogFileName=test_results.trx\"",
+			"group": "test"
 		}
 	]
 }
