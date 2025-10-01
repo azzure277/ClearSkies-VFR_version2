@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ClearSkies.Domain.Options;
 using ClearSkies.Api.Services;
+using ClearSkies.Api.Models;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Aviation;
 using ClearSkies.Api.Problems;
@@ -16,24 +17,64 @@ namespace ClearSkies.Api.Controllers
         private readonly ClearSkies.Infrastructure.Airports.InMemoryAirportSearchCatalog _airportSearchCatalog;
 
         [HttpGet("search")]
-        public IActionResult SearchAirports([FromQuery(Name = "q")] string? query, [FromQuery(Name = "limit")] int? limit = 10)
+        public IActionResult SearchAirports([FromQuery] SearchRequest request)
         {
-            // Return 400 Bad Request for missing, empty, or whitespace-only query
-            if (string.IsNullOrWhiteSpace(query))
-                return BadRequest("Query parameter 'q' is required and cannot be empty.");
+            // Validate request parameters manually for custom error response
+            if (string.IsNullOrWhiteSpace(request.Q))
+            {
+                return BadRequest(new ErrorResponse 
+                { 
+                    Error = "Invalid request parameters", 
+                    Details = "Query parameter 'q' is required and cannot be empty" 
+                });
+            }
 
-            var results = _airportSearchCatalog.Search(query, limit ?? 10)
-                .Select(a => new {
-                    icao = a.Icao,
-                    iata = a.Iata,
-                    name = a.Name,
-                    city = a.City,
-                    state = a.State,
-                    country = a.Country
+            if (request.Take < 1 || request.Take > 50)
+            {
+                return BadRequest(new ErrorResponse 
+                { 
+                    Error = "Invalid request parameters", 
+                    Details = "take must be between 1 and 50" 
+                });
+            }
+
+            if (request.Page < 1)
+            {
+                return BadRequest(new ErrorResponse 
+                { 
+                    Error = "Invalid request parameters", 
+                    Details = "page must be greater than 0" 
+                });
+            }
+
+            // Get all matching results first
+            var allResults = _airportSearchCatalog.Search(request.Q, int.MaxValue).ToList();
+            var totalResults = allResults.Count;
+
+            // Apply pagination
+            var pagedResults = allResults
+                .Skip((request.Page - 1) * request.Take)
+                .Take(request.Take)
+                .Select(a => new AirportSearchResult
+                {
+                    Icao = a.Icao,
+                    Iata = a.Iata,
+                    Name = a.Name,
+                    City = a.City,
+                    State = a.State,
+                    Country = a.Country
                 })
                 .ToList();
 
-            return Ok(results);
+            var response = new SearchResponse<AirportSearchResult>
+            {
+                Items = pagedResults,
+                Total = totalResults,
+                Page = request.Page,
+                PageSize = request.Take
+            };
+
+            return Ok(response);
         }
 
 

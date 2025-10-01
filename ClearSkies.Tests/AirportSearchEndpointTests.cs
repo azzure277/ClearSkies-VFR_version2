@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
+using ClearSkies.Api.Models;
 
 namespace ClearSkies.Tests;
 
@@ -25,11 +26,9 @@ public class AirportSearchEndpointTests : IClassFixture<TestWebAppFactory>
     {
         var resp = await _client.GetAsync($"/airports/search?q={query}");
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var json = await resp.Content.ReadAsStringAsync();
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var results = doc.RootElement.EnumerateArray().ToList();
-        results.Should().NotBeNull();
-        results.Should().Contain(r => r.GetProperty("icao").GetString() == expectedIcao);
+        var result = await resp.Content.ReadFromJsonAsync<SearchResponse<AirportSearchResult>>();
+        result.Should().NotBeNull();
+        result!.Items.Should().Contain(r => r.Icao == expectedIcao);
     }
 
     [Fact]
@@ -42,12 +41,10 @@ public class AirportSearchEndpointTests : IClassFixture<TestWebAppFactory>
     [Fact]
     public async Task Search_Respects_Limit()
     {
-        var resp = await _client.GetAsync("/airports/search?q=a&limit=2");
+        var resp = await _client.GetAsync("/airports/search?q=a&take=2");
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var json = await resp.Content.ReadAsStringAsync();
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var results = doc.RootElement.EnumerateArray().ToList();
-        results.Should().NotBeNull();
-    results.Count.Should().BeLessThanOrEqualTo(2);
+        var result = await resp.Content.ReadFromJsonAsync<SearchResponse<AirportSearchResult>>();
+        result.Should().NotBeNull();
+        result!.Items.Count().Should().BeLessThanOrEqualTo(2);
     }
 }
