@@ -59,7 +59,13 @@ namespace ClearSkies.Api.Services
 
         private async Task<AirportConditionsDto?> GetConditionsInternalAsync(string icao, int runwayHeadingDeg, CancellationToken ct)
         {
-            _logger.LogInformation("Fetching METAR for {ICAO}", icao);
+            using var scope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["Icao"] = icao,
+                ["RunwayHeading"] = runwayHeadingDeg > 0 ? (object)runwayHeadingDeg : "none"
+            });
+
+            _logger.LogInformation("Fetching METAR for {ICAO} with runway heading {RunwayHeading}", icao, runwayHeadingDeg);
 
             var metar = await _weatherProvider.GetMetarAsync(icao, ct);
             if (metar is null)
@@ -93,8 +99,8 @@ namespace ClearSkies.Api.Services
                 isStale = true;
             }
 
-            _logger.LogInformation("Returning conditions for {ICAO} (DA {DA} ft, Head {Head} kt, Cross {Cross} kt)",
-                icao, da, head, cross);
+            _logger.LogInformation("Conditions calculated for {ICAO}: Category={Category}, DA={DensityAltitude}ft, Head={Headwind}kt, Cross={Crosswind}kt, Age={AgeMinutes}min, Stale={IsStale}",
+                icao, (int)category, da, head, Math.Abs(cross), ageMinutes, isStale);
 
             return new AirportConditionsDto {
                 Icao = metar.Icao,

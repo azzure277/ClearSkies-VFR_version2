@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,11 +17,13 @@ namespace ClearSkies.Api.Services
     {
         private readonly IMemoryCache _cache;
         private readonly Func<DateTime> _clock;
+        private readonly ILogger<ConditionsCache> _logger;
 
-        public ConditionsCache(IMemoryCache cache, Func<DateTime>? clock = null)
+        public ConditionsCache(IMemoryCache cache, ILogger<ConditionsCache> logger, Func<DateTime>? clock = null)
         {
             _cache = cache;
             _clock = clock ?? (() => DateTime.UtcNow);
+            _logger = logger;
         }
 
         public async Task<AirportConditionsDto?> GetCachedConditionsAsync(
@@ -54,6 +57,8 @@ namespace ClearSkies.Api.Services
                 // Fresh data - return immediately
                 if (age <= freshTtl)
                 {
+                    _logger.LogDebug("Cache HIT: {CacheKey} (age: {AgeSeconds}s, fresh within {FreshTtlSeconds}s)", 
+                        cacheKey, age.TotalSeconds, freshTtl.TotalSeconds);
                     cached.Data.CacheResult = "HIT";
                     return cached.Data;
                 }
@@ -61,34 +66,41 @@ namespace ClearSkies.Api.Services
                 // Stale but acceptable data
                 if (age <= staleTtl)
                 {
+                    _logger.LogInformation("Cache STALE: {CacheKey} (age: {AgeSeconds}s, refreshing in background)", 
+                        cacheKey, age.TotalSeconds);
+                    
                     // Try to refresh in background, but return stale data immediately
                     _ = Task.Run(async () =>
                     {
                         try
                         {
+                            _logger.LogDebug("Background refresh started for {CacheKey}", cacheKey);
                             var refreshed = await factory();
                             if (refreshed != null)
                             {
                                 var entry = new CacheEntry { Data = refreshed, CachedAt = _clock() };
                                 _cache.Set(cacheKey, entry, staleTtl);
+                                _logger.LogDebug("Background refresh completed for {CacheKey}", cacheKey);
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // Background refresh failed, keep serving stale data
+                            _logger.LogWarning(ex, "Background refresh failed for {CacheKey}", cacheKey);
                         }
                     });
 
-                    cached.Data.CacheResult = "HIT";
-                    cached.Data.IsStale = true;
+                    cached.Data.CacheResult = "STALE";
                     return cached.Data;
                 }
 
                 // Too old - remove from cache
+                _logger.LogInformation("Cache EXPIRED: {CacheKey} (age: {AgeSeconds}s, max: {StaleTtlSeconds}s)", 
+                    cacheKey, age.TotalSeconds, staleTtl.TotalSeconds);
                 _cache.Remove(cacheKey);
             }
 
             // Cache miss or expired - fetch fresh data
+            _logger.LogDebug("Cache MISS: {CacheKey} - fetching fresh data", cacheKey);
             try
             {
                 var result = await factory();

@@ -3,6 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using ClearSkies.Api.Services;
 using ClearSkies.Domain;
@@ -17,7 +19,13 @@ public class ConditionsCacheTests
     public ConditionsCacheTests()
     {
         _memoryCache = new MemoryCache(new MemoryCacheOptions());
-        _cache = new ConditionsCache(_memoryCache);
+        
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILogger<ConditionsCache>>();
+        
+        _cache = new ConditionsCache(_memoryCache, logger);
     }
 
     [Fact]

@@ -18,6 +18,7 @@ using ClearSkies.Domain.Diagnostics;
 using ClearSkies.Api.Http;
 using ClearSkies.Api.Problems;
 using ClearSkies.Api;
+using ClearSkies.Api.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add observability services
+builder.Services.AddSingleton<IMetricsCollector, MetricsCollector>();
+builder.Services.AddHealthChecks()
+    .AddCheck<WeatherProviderHealthCheck>("weather_provider", timeout: TimeSpan.FromSeconds(10))
+    .AddCheck<CacheHealthCheck>("memory_cache", timeout: TimeSpan.FromSeconds(5));
 
 // Register services by type so DI supplies all constructor arguments automatically
 builder.Services.AddSingleton<ClearSkies.Domain.Aviation.IRunwayCatalog, ClearSkies.Infrastructure.Runways.InMemoryRunwayCatalog>();
@@ -67,14 +74,24 @@ builder.Services.AddSingleton<IWeatherProvider>(sp =>
 
 var app = builder.Build();
 
+// Configure structured logging
+app.Logger.LogInformation("Starting ClearSkies API with observability features");
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// Add observability middleware
+app.UseMiddleware<ObservabilityMiddleware>();
+
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
+
+// Add health check endpoint
+app.MapHealthChecks("/health");
+
 app.Run();
 
