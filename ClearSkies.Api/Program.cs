@@ -38,6 +38,10 @@ builder.Services.AddHttpContextAccessor();
 // Register IConditionsService for DI
 builder.Services.AddSingleton<IConditionsService, ConditionsService>();
 
+// Register cache services
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IConditionsCache, ConditionsCache>();
+
 // Register ICacheStamp for DI
 builder.Services.AddSingleton<ICacheStamp, CacheStamp>();
 

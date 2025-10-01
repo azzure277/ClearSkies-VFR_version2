@@ -106,6 +106,7 @@ namespace ClearSkies.Api.Controllers
         public async Task<IActionResult> GetConditions(
             string icao,
             [FromQuery] string? runway = null,
+            [FromQuery] bool refresh = false,
             CancellationToken ct = default)
         {
 
@@ -148,7 +149,7 @@ namespace ClearSkies.Api.Controllers
                 }
             }
             // 4) Call service with heading
-            var dto = await _svc.GetConditionsAsync(icao, heading, ct);
+            var dto = await _svc.GetConditionsAsync(icao, heading, ct, refresh);
             if (dto != null && !string.IsNullOrWhiteSpace(runway))
             {
                 dto.Runway = runway;

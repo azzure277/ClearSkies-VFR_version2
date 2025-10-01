@@ -1,12 +1,11 @@
 using ClearSkies.Infrastructure;
-
+using ClearSkies.Api.Services;
 using ClearSkies.Domain.Options;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 using ClearSkies.Domain;
 using ClearSkies.Domain.Diagnostics;
-using ClearSkies.Api.Services;
 using NSubstitute;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -30,7 +29,13 @@ public class ConditionsServiceTests
         var catalog = Substitute.For<IAirportCatalog>();
         var runways = Substitute.For<ClearSkies.Domain.Aviation.IRunwayCatalog>();
         var logger = Substitute.For<Microsoft.Extensions.Logging.ILogger<ConditionsService>>();
-        var svc = new ConditionsService(provider, catalog, runways, opts, logger, stamp);
+        var cache = Substitute.For<IConditionsCache>();
+        
+        // Set up cache to call the factory (bypass cache)
+        cache.GetCachedConditionsAsync(Arg.Any<string>(), Arg.Any<Func<Task<AirportConditionsDto?>>>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>(), Arg.Any<bool>())
+             .Returns(callInfo => callInfo.Arg<Func<Task<AirportConditionsDto?>>>()());
+        
+        var svc = new ConditionsService(provider, catalog, runways, opts, logger, stamp, cache);
 
         // act
         var dto = await svc.GetConditionsAsync("KSFO", 280, CancellationToken.None);

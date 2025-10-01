@@ -12,7 +12,7 @@ namespace ClearSkies.Api.Services
 {
     public interface IConditionsService
     {
-        Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct);
+        Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct, bool forceRefresh = false);
     }
 
     public sealed class ConditionsService : IConditionsService
@@ -23,6 +23,7 @@ namespace ClearSkies.Api.Services
         private readonly ILogger<ConditionsService> _logger;
         private readonly WeatherOptions _options;
         private readonly ClearSkies.Domain.Diagnostics.ICacheStamp _stamp;
+        private readonly IConditionsCache _conditionsCache;
 
         public ConditionsService(
             IWeatherProvider weatherProvider,
@@ -30,7 +31,8 @@ namespace ClearSkies.Api.Services
             ClearSkies.Domain.Aviation.IRunwayCatalog runways,
             IOptions<WeatherOptions> options,
             ILogger<ConditionsService> logger,
-            ClearSkies.Domain.Diagnostics.ICacheStamp stamp)
+            ClearSkies.Domain.Diagnostics.ICacheStamp stamp,
+            IConditionsCache conditionsCache)
         {
             _weatherProvider = weatherProvider;
             _catalog = catalog;
@@ -38,9 +40,24 @@ namespace ClearSkies.Api.Services
             _logger = logger;
             _options = options.Value;
             _stamp = stamp;
+            _conditionsCache = conditionsCache;
         }
 
-        public async Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct)
+        public async Task<AirportConditionsDto?> GetConditionsAsync(string icao, int runwayHeadingDeg, CancellationToken ct, bool forceRefresh = false)
+        {
+            var cacheKey = GetCacheKey(icao, runwayHeadingDeg);
+            var freshTtl = TimeSpan.FromMinutes(2);  // 2 minutes fresh
+            var staleTtl = TimeSpan.FromMinutes(10); // 10 minutes stale-acceptable
+
+            return await _conditionsCache.GetCachedConditionsAsync(
+                cacheKey,
+                () => GetConditionsInternalAsync(icao, runwayHeadingDeg, ct),
+                freshTtl,
+                staleTtl,
+                forceRefresh);
+        }
+
+        private async Task<AirportConditionsDto?> GetConditionsInternalAsync(string icao, int runwayHeadingDeg, CancellationToken ct)
         {
             _logger.LogInformation("Fetching METAR for {ICAO}", icao);
 
@@ -102,6 +119,14 @@ namespace ClearSkies.Api.Services
                 Runway = (runwayHeadingDeg > 0) ? null : null, // To be set by controller if needed
                 RunwayHeadingDeg = (runwayHeadingDeg > 0) ? runwayHeadingDeg : (int?)null
             };
+        }
+
+        private static string GetCacheKey(string icao, int runwayHeadingDeg)
+        {
+            var normalizedIcao = icao.ToUpperInvariant();
+            return runwayHeadingDeg > 0 
+                ? $"conditions:{normalizedIcao}:hdg{runwayHeadingDeg}" 
+                : $"conditions:{normalizedIcao}";
         }
     }
 }
